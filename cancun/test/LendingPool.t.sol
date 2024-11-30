@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {Test, console} from "forge-std/Test.sol";
+import {LibZip} from "solady/src/utils/LibZip.sol";
 import {LendingPool, LendingPoolConfig, InterestRateModel, LendingPoolStorage} from "../src/LendingPool.sol";
 import {MockToken} from "./mocks/MockToken.sol";
 import {MockWarchest} from "./mocks/MockWarchest.sol";
@@ -59,7 +60,7 @@ contract LendingPoolTest is Test {
         lp.withdraw(0, 1 ether - 10 ** 3);
     }
 
-    function testWork() public {
+    function testWorkNormal() public {
         vm.startPrank(address(1), address(1));
         collateral.mint(address(1), 1 ether);
         collateral.approve(address(lp), 1 ether);

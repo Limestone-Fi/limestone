@@ -59,7 +59,6 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @notice Initializes the lending pool facet.
     function initialize() external initializer {
         LendingPoolStorage.layout().nextPositionID = 1;
-        _setOwner(msg.sender); // NOTE: For testing only.
     }
 
     /// @notice Deposits tokens into a lending pool.
@@ -119,7 +118,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         scopePtr.set(abi.encode(LendingPoolStorage.ExecScope({positionId: _id.u32(), worker: _ctx.worker})));
 
         // Check worker parameters to ensure that debt can be accepted by the worker and clear all debt for recalculation.
-        LendingPoolStorage.WorkerDebtParams memory workerParams = l.workerDebtParams[_ctx.worker];
+        LendingPoolStorage.WorkerDebtParams storage workerParams = l.workerDebtParams[_ctx.worker];
         _require(workerParams.authorizedPoolId == _ctx.poolId, Errors.WORKER_NOT_AUTHORIZED);
         _require(
             _ctx.loan == 0 || (workerParams.borrowable && IWorker(_ctx.worker).healthcheck()), Errors.NOT_ACCEPTING_DEBT
@@ -379,7 +378,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @param _poolId Pool ID to calculate the pending interest for.
     /// @return The pending amount of interest that will be accrued by the pool.
     function pendingInterest(uint256 _poolId) public view returns (uint256) {
-        Market memory lendingPool = LendingPoolStorage.layout().pools[_poolId];
+        Market storage lendingPool = LendingPoolStorage.layout().pools[_poolId];
         if (block.timestamp > lendingPool.lastAccrueTime) {
             uint256 timePast = (block.timestamp - lendingPool.lastAccrueTime);
             uint256 balance = lendingPool.warchest.underlyingBalanceWithInvestment();
@@ -396,7 +395,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @param _debtShare The amount of debt shares to calculate the value of.
     /// @return The amount of `underlying` tokens `_debtShares` is worth.
     function debtShareToVal(uint256 _poolId, uint256 _debtShare) public view returns (uint256) {
-        Market memory lendingPool = LendingPoolStorage.layout().pools[_poolId];
+        Market storage lendingPool = LendingPoolStorage.layout().pools[_poolId];
         if (lendingPool.globalDebtShare == 0) return _debtShare; // When there's no share, 1 share = 1 val.
         return ((_debtShare * lendingPool.globalDebtValue) / lendingPool.globalDebtShare);
     }
@@ -406,7 +405,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @param _debtVal The amount of `underlying` tokens to calculate the shares value of.
     /// @return The amount of shares that `_debtVal` tokens are worth.
     function debtValToShare(uint256 _poolId, uint256 _debtVal) public view returns (uint256) {
-        Market memory lendingPool = LendingPoolStorage.layout().pools[_poolId];
+        Market storage lendingPool = LendingPoolStorage.layout().pools[_poolId];
         if (lendingPool.globalDebtShare == 0) return _debtVal; // When there's no share, 1 share = 1 val.
         return ((_debtVal * lendingPool.globalDebtShare) / lendingPool.globalDebtValue);
     }
@@ -423,7 +422,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @param _poolId ID of the pool to calculate the total tokens of.
     /// @return How many tokens are held by the lending pool, including pool debts.
     function totalTokens(uint256 _poolId) public view returns (uint256) {
-        Market memory lendingPool = LendingPoolStorage.layout().pools[_poolId];
+        Market storage lendingPool = LendingPoolStorage.layout().pools[_poolId];
         return (
             (lendingPool.warchest.underlyingBalanceWithInvestment() + lendingPool.globalDebtValue)
                 - lendingPool.reservePool
