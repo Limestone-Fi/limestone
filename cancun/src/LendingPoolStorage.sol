@@ -32,8 +32,6 @@ library LendingPoolStorage {
     }
 
     struct Layout {
-        /// @notice Execution scope for tracking worker execution.
-        ExecScope execScope;
         /// @notice Whether or not liquidation is permissioned.
         bool permissionedLiquidation;
         /// @notice ID for the next LYF position.

@@ -7,6 +7,7 @@ import {Ownable} from "@solidstate/access/ownable/Ownable.sol";
 import {SolidStateERC20} from "@solidstate/token/ERC20/SolidStateERC20.sol";
 import {Initializable} from "@solidstate/security/initializable/Initializable.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
+import {LibZip} from "solady/src/utils/LibZip.sol";
 import {LibTransient} from "solady/src/utils/LibTransient.sol";
 import {Cast} from "./lib/Cast.sol";
 import {Errors, _require} from "./lib/Errors.sol";
@@ -58,8 +59,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @notice Initializes the lending pool facet.
     function initialize() external initializer {
         LendingPoolStorage.layout().nextPositionID = 1;
-        LendingPoolStorage.layout().execScope =
-            LendingPoolStorage.ExecScope({positionId: type(uint32).max, worker: address(0)});
+        _setOwner(msg.sender); // NOTE: For testing only.
     }
 
     /// @notice Deposits tokens into a lending pool.

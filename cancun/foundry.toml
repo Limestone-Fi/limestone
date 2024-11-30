@@ -2,6 +2,7 @@
 src = "src"
 out = "out"
 libs = ["dependencies"]
+evm_version = "cancun"
 via-ir = true
 bytecode_hash = "none"
 
