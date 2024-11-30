@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "namedInputs": {
+    "default": [
+      "{projectRoot}/**/*",
+      "sharedGlobals"
+    ],
+    "production": [
+      "default"
+    ],
+    "sharedGlobals": []
+  },
+  "plugins": [
+    {
+      "plugin": "nx-foundry",
+      "options": {
+        "buildTargetName": "build",
+        "testTargetName": "test",
+        "formatTargetName": "format",
+        "snapshotTargetName": "snapshot",
+        "deployTargetName": "deploy"
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@limestone/source",
+  "version": "0.0.0",
+  "license": "MIT",
+  "scripts": {},
+  "private": true,
+  "devDependencies": {
+    "@nx/workspace": "20.1.4",
+    "nx": "20.1.4",
+    "nx-foundry": "0.1.2"
+  }
+}

@@ -1,0 +1,16 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["dependencies"]
+via-ir = true
+bytecode_hash = "none"
+
+[soldeer]
+remappings_version = false
+remappings_location = "txt"
+
+[dependencies]
+forge-std = "1.9.4"
+solady = "0.0.273"
+"@openzeppelin-contracts" = "5.1.0-rc.0"
+"@solidstate-contracts" = "0.0.60"
