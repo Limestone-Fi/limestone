@@ -13,30 +13,30 @@ struct LendingPoolConfig {
     uint16 reservePoolBps;
     uint16 liquidateBps;
     InterestRateModel interestRateModel;
-    uint128 minDebtSize;
+    uint112 minDebtSize;
 }
 
 /// @notice Leveraged yield farming position.
 struct Position {
     address worker;
     address owner;
-    uint256 poolId;
-    uint256 debtShare;
+    uint32 poolId;
+    uint112 debtShare;
 }
 
 /// @notice Lending pool configuration and data.
 struct Market {
     address underlying;
     uint32 lastAccrueTime;
-    uint128 minDebtSize;
+    uint112 minDebtSize;
     uint16 reservePoolBps;
     uint16 liquidateBps;
     InterestRateModel interestRateModel;
     IWarchest warchest;
     uint112 totalShares;
-    uint256 globalDebtValue;
-    uint256 globalDebtShare;
-    uint256 reservePool;
+    uint112 globalDebtValue;
+    uint112 globalDebtShare;
+    uint112 reservePool;
 }
 
 /// @notice Lending Pool Interface

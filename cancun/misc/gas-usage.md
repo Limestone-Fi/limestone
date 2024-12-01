@@ -1,20 +1,20 @@
 No files changed, compilation skipped
 
 Ran 3 tests for test/LendingPool.t.sol:LendingPoolTest
-[PASS] testDeposit() (gas: 287301)
-[PASS] testDepositAndWithdraw() (gas: 376940)
-[PASS] testWork() (gas: 518828)
-Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 1.20ms (1.09ms CPU time)
+[PASS] testDeposit() (gas: 280211)
+[PASS] testDepositAndWithdraw() (gas: 362744)
+[PASS] testWorkNormal() (gas: 511397)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 1.88s (522.21ms CPU time)
 | src/LendingPool.sol:LendingPool contract |                 |        |        |        |         |
 |------------------------------------------|-----------------|--------|--------|--------|---------|
 | Deployment Cost                          | Deployment Size |        |        |        |         |
-| 2960775                                  | 13474           |        |        |        |         |
+| 3104129                                  | 14136           |        |        |        |         |
 | Function Name                            | min             | avg    | median | max    | # calls |
-| addLendingPool                           | 128677          | 128677 | 128677 | 128677 | 3       |
-| deposit                                  | 168852          | 168852 | 168852 | 168852 | 3       |
-| doHardWork                               | 141486          | 141486 | 141486 | 141486 | 1       |
-| initialize                               | 90643           | 90643  | 90643  | 90643  | 3       |
-| withdraw                                 | 93992           | 93992  | 93992  | 93992  | 1       |
+| addLendingPool                           | 125155          | 125155 | 125155 | 125155 | 3       |
+| deposit                                  | 161762          | 161762 | 161762 | 161762 | 3       |
+| doHardWork                               | 141189          | 141189 | 141189 | 141189 | 1       |
+| initialize                               | 90599           | 90599  | 90599  | 90599  | 3       |
+| withdraw                                 | 86886           | 86886  | 86886  | 86886  | 1       |
 
 
 | test/mocks/MockToken.sol:MockToken contract |                 |       |        |       |         |
@@ -37,4 +37,4 @@ Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 1.20ms (1.09ms CPU 
 
 
 
-Ran 1 test suite in 2.54ms (1.20ms CPU time): 3 tests passed, 0 failed, 0 skipped (3 total tests)
+Ran 1 test suite in 2.32s (1.88s CPU time): 3 tests passed, 0 failed, 0 skipped (3 total tests)

@@ -50,6 +50,9 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         bytes data;
     }
 
+    /// @dev Min amount of shares that must be minted. Prevents potential share inflation exploits.
+    uint112 internal constant MIN_SHARES = 10 ** 3;
+
     /// @notice Used to restrict calls to EOAs only to avoid flashloan interactions.
     modifier onlyEOA() {
         _require(msg.sender == tx.origin, Errors.CALLER_NOT_EOA);
@@ -59,6 +62,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @notice Initializes the lending pool facet.
     function initialize() external initializer {
         LendingPoolStorage.layout().nextPositionID = 1;
+        _setOwner(msg.sender);
     }
 
     /// @notice Deposits tokens into a lending pool.
@@ -77,7 +81,10 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         Market storage pool = LendingPoolStorage.layout().pools[_poolId];
         uint256 amount = ((_shares * totalTokens(_poolId)) / pool.totalShares);
         pool.warchest.burn(msg.sender, _shares);
-        pool.totalShares -= _shares.u112();
+        unchecked {
+            // Overflow is literally impossible as total shares will always be MIN_SHARES at minimum.
+            pool.totalShares -= _shares.u112();
+        }
         pool.warchest.withdrawReserves(msg.sender, amount);
         emit Withdraw(_poolId, msg.sender, _shares, amount);
     }
@@ -106,7 +113,8 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
 
         // Validate the current position being managed.
         if (_id == 0) {
-            _id = l.nextPositionID++;
+            // forgefmt: disable-next-line
+            unchecked {_id = l.nextPositionID++;}// Overflow risk unlikely. Can even intervene before we hit 4.2b positions.
             l.positions[_id].worker = _ctx.worker;
             l.positions[_id].owner = msg.sender;
         } else {
@@ -115,7 +123,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
             _require(l.positions[_id].owner == msg.sender, Errors.NOT_POS_OWNER);
         }
         emit Borrow(_ctx.poolId, _id, _ctx.loan);
-        scopePtr.set(abi.encode(LendingPoolStorage.ExecScope({positionId: _id.u32(), worker: _ctx.worker})));
+        scopePtr.set(abi.encode(LendingPoolStorage.ExecScope({positionId: uint32(_id), worker: _ctx.worker})));
 
         // Check worker parameters to ensure that debt can be accepted by the worker and clear all debt for recalculation.
         LendingPoolStorage.WorkerDebtParams storage workerParams = l.workerDebtParams[_ctx.worker];
@@ -127,20 +135,18 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
 
         // Send assets to the worker to execute the leveraged yield farming position and calculate tokens received back.
         uint256 back;
-        {
-            uint256 toInvest = (_ctx.amountIn + _ctx.loan);
-            uint256 warchestAssets = pool.underlying.balanceOf(address(pool.warchest));
-            bool sufficientLiquidity = warchestAssets >= toInvest;
-            uint256 tokensBefore =
-                (sufficientLiquidity ? warchestAssets : pool.warchest.underlyingBalanceWithInvestment() - toInvest);
-            pool.warchest.withdrawReserves(_ctx.worker, toInvest);
-            IWorker(_ctx.worker).work(_id, msg.sender, debt, _ctx.data);
-            back = (
-                sufficientLiquidity
-                    ? pool.underlying.balanceOf(address(pool.warchest))
-                    : pool.warchest.underlyingBalanceWithInvestment() - tokensBefore
-            );
-        }
+        uint256 toInvest = (_ctx.amountIn + _ctx.loan);
+        uint256 warchestAssets = pool.underlying.balanceOf(address(pool.warchest));
+        bool sufficientLiquidity = warchestAssets >= toInvest;
+        uint256 tokensBefore =
+            (sufficientLiquidity ? warchestAssets : pool.warchest.underlyingBalanceWithInvestment() - toInvest);
+        pool.warchest.withdrawReserves(_ctx.worker, toInvest);
+        IWorker(_ctx.worker).work(_id, msg.sender, debt, _ctx.data);
+        back = (
+            sufficientLiquidity
+                ? pool.underlying.balanceOf(address(pool.warchest))
+                : pool.warchest.underlyingBalanceWithInvestment() - tokensBefore
+        );
 
         // Update the position accordingly by repaying any current debt.
         uint256 lessDebt = Math.min(debt, Math.min(back, _ctx.maxReturn));
@@ -149,7 +155,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
             _require(debt >= pool.minDebtSize, Errors.DEBT_TOO_SMALL);
             uint256 health = IWorker(_ctx.worker).health(_id);
             _require((health * workerParams.workFactor) >= (debt * 10000), Errors.UNHEALTHY_POSITION);
-            _addDebt(_ctx.poolId, _id, debt);
+            _addDebt(_ctx.poolId, _id, debt.u112());
         }
         // Send any surplus tokens to the user.
         if (back > lessDebt) pool.warchest.withdrawReserves(msg.sender, back - lessDebt);
@@ -167,7 +173,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         _require(_posId != 0 && _posId < l.nextPositionID, Errors.MALFORMED_POS_ID);
         _require(msg.sender == pos.owner, Errors.NOT_POS_OWNER);
         _accrue(pos.poolId);
-        scopePtr.set(abi.encode(LendingPoolStorage.ExecScope({positionId: _posId.u32(), worker: pos.worker})));
+        scopePtr.set(abi.encode(LendingPoolStorage.ExecScope({positionId: uint32(_posId), worker: pos.worker})));
         uint256 initialHealth = IWorker(pos.worker).health(_posId);
         _require(initialHealth != 0, Errors.INACTIVE_POSITION);
 
@@ -248,7 +254,10 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
                 reservePool: 0
             })
         );
-        uint256 poolId = l.pools.length - 1;
+        uint256 poolId;
+        unchecked {
+            poolId = l.pools.length - 1;
+        }
         emit MarketCreated(poolId, _underlying, _warchest, _config);
 
         // Add seed liquidity to the pool if needed.
@@ -309,7 +318,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @param _destination Address to send tokens from the reserves to.
     /// @param _pools Pools to collect reserves from.
     /// @param _amounts Amounts of tokens to collect from each of the reserves in `_pools`.
-    function collectReserves(address _destination, uint256[] calldata _pools, uint256[] calldata _amounts)
+    function collectReserves(address _destination, uint256[] calldata _pools, uint112[] calldata _amounts)
         external
         onlyOwner
     {
@@ -325,7 +334,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @notice Distributes pending lending pool reserves (collected protocol fees) to existing lenders in the pool.
     /// @param _pools Pools to distribute the reserves of.
     /// @param _amounts Amounts of tokens from each reserve in `_pools` to distribute to lenders.
-    function distributeReserves(uint256[] calldata _pools, uint256[] calldata _amounts) external onlyOwner {
+    function distributeReserves(uint256[] calldata _pools, uint112[] calldata _amounts) external onlyOwner {
         for (uint256 i; i < _pools.length;) {
             LendingPoolStorage.layout().pools[_pools[i]].reservePool -= _amounts[i];
             // forgefmt: disable-next-line
@@ -377,14 +386,18 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @notice Calculates the pending amount of interest that will be accrued for a specific pool.
     /// @param _poolId Pool ID to calculate the pending interest for.
     /// @return The pending amount of interest that will be accrued by the pool.
-    function pendingInterest(uint256 _poolId) public view returns (uint256) {
+    function pendingInterest(uint256 _poolId) public view returns (uint112) {
         Market storage lendingPool = LendingPoolStorage.layout().pools[_poolId];
         if (block.timestamp > lendingPool.lastAccrueTime) {
-            uint256 timePast = (block.timestamp - lendingPool.lastAccrueTime);
-            uint256 balance = lendingPool.warchest.underlyingBalanceWithInvestment();
-            uint256 ratePerSec =
-                _calculateInterestRate(lendingPool.interestRateModel, lendingPool.globalDebtValue, balance);
-            return (((ratePerSec * lendingPool.globalDebtValue) * timePast) / 1e18);
+            uint112 timePassed;
+            unchecked {
+                // @dev Unless we somehow traveled back in time, the odds of this underlying is zero.
+                timePassed = uint112(block.timestamp - lendingPool.lastAccrueTime);
+            }
+            uint112 balance = lendingPool.warchest.underlyingBalanceWithInvestment().u112();
+            uint112 ratePerSec =
+                _calculateInterestRate(lendingPool.interestRateModel, lendingPool.globalDebtValue, balance).u112();
+            return (((ratePerSec * lendingPool.globalDebtValue) * timePassed) / uint112(1e18));
         } else {
             return 0;
         }
@@ -394,7 +407,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @param _poolId ID of the pool to calculate share values for.
     /// @param _debtShare The amount of debt shares to calculate the value of.
     /// @return The amount of `underlying` tokens `_debtShares` is worth.
-    function debtShareToVal(uint256 _poolId, uint256 _debtShare) public view returns (uint256) {
+    function debtShareToVal(uint256 _poolId, uint112 _debtShare) public view returns (uint112) {
         Market storage lendingPool = LendingPoolStorage.layout().pools[_poolId];
         if (lendingPool.globalDebtShare == 0) return _debtShare; // When there's no share, 1 share = 1 val.
         return ((_debtShare * lendingPool.globalDebtValue) / lendingPool.globalDebtShare);
@@ -404,7 +417,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @param _poolId ID of the pool to calculate shares from.
     /// @param _debtVal The amount of `underlying` tokens to calculate the shares value of.
     /// @return The amount of shares that `_debtVal` tokens are worth.
-    function debtValToShare(uint256 _poolId, uint256 _debtVal) public view returns (uint256) {
+    function debtValToShare(uint256 _poolId, uint112 _debtVal) public view returns (uint112) {
         Market storage lendingPool = LendingPoolStorage.layout().pools[_poolId];
         if (lendingPool.globalDebtShare == 0) return _debtVal; // When there's no share, 1 share = 1 val.
         return ((_debtVal * lendingPool.globalDebtShare) / lendingPool.globalDebtValue);
@@ -413,7 +426,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @notice Calculates the current value of a specific position.
     /// @param _id ID of the position to calculate the value of.
     /// @return The total value of the position and the total amount of debt held by the position.
-    function positionInfo(uint256 _id) public view returns (uint256, uint256) {
+    function positionInfo(uint256 _id) public view returns (uint256, uint112) {
         Position storage pos = LendingPoolStorage.layout().positions[_id];
         return (IWorker(pos.worker).health(_id), debtShareToVal(pos.poolId, pos.debtShare));
     }
@@ -432,11 +445,11 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     function _accrue(uint256 _poolId) internal {
         Market storage pool = LendingPoolStorage.layout().pools[_poolId];
         if (block.timestamp > pool.lastAccrueTime) {
-            uint256 interest = pendingInterest(_poolId);
-            uint256 toReserve = ((interest * pool.reservePoolBps) / 10000);
+            uint112 interest = pendingInterest(_poolId);
+            uint112 toReserve = ((interest * pool.reservePoolBps) / uint112(10000));
             pool.reservePool = (pool.reservePool + toReserve);
             pool.globalDebtValue = (pool.globalDebtValue + interest);
-            pool.lastAccrueTime = block.timestamp.u32();
+            pool.lastAccrueTime = uint32(block.timestamp); // @dev can upgrade before 2102 (If we're still alive by then).
         }
     }
 
@@ -445,35 +458,50 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         Market storage pool = l.pools[_poolId];
         pool.underlying.safeTransferFrom(_depositor, address(pool.warchest), _amount);
         uint256 total = (totalTokens(_poolId) - _amount);
-        uint256 share = total == 0 ? _amount - 10 ** 3 : ((_amount * pool.totalShares) / total);
+        uint256 share = total == 0 ? _amount - MIN_SHARES : ((_amount * pool.totalShares) / total);
         if (total == 0) {
-            // We reserve a small amount (10 ** 3) of shares to prevent inflation attacks.
-            pool.warchest.mint(address(pool.warchest), 10 ** 3);
-            pool.totalShares += 10 ** 3;
+            unchecked {
+                // We reserve a small amount (10 ** 3) of shares to prevent inflation attacks.
+                pool.warchest.mint(address(pool.warchest), MIN_SHARES);
+                // type(uint112).max is VERY big so the overflow risk really just isn't there.
+                pool.totalShares += MIN_SHARES;
+            }
         }
-        pool.warchest.mint(msg.sender, share);
-        pool.totalShares += share.u112();
+        unchecked {
+            pool.warchest.mint(msg.sender, share);
+            // Same as the unchecked increase.
+            pool.totalShares += share.u112();
+        }
     }
 
-    function _addDebt(uint256 _poolId, uint256 _posId, uint256 _debtValue) internal {
+    function _addDebt(uint256 _poolId, uint256 _posId, uint112 _debtValue) internal {
         Market storage pool = LendingPoolStorage.layout().pools[_poolId];
         Position storage pos = LendingPoolStorage.layout().positions[_posId];
-        uint256 debtShare = debtValToShare(_poolId, _debtValue);
-        pos.debtShare = (pos.debtShare + debtShare);
-        pool.globalDebtShare = (pool.globalDebtShare + debtShare);
-        pool.globalDebtValue = (pool.globalDebtValue + _debtValue);
+        uint112 debtShare = debtValToShare(_poolId, _debtValue);
+        unchecked {
+            // @dev Unlikely to overflow, esp when type(uint112).max is HUGE.
+            // That said, will do some fuzzing to confirm my findings.
+            pos.debtShare += debtShare;
+            pool.globalDebtShare += debtShare;
+            pool.globalDebtValue += _debtValue;
+        }
         emit AddDebt(_poolId, _posId, debtShare);
     }
 
     function _removeDebt(uint256 _poolId, uint256 _posId) internal returns (uint256) {
         Market storage pool = LendingPoolStorage.layout().pools[_poolId];
         Position storage pos = LendingPoolStorage.layout().positions[_posId];
-        uint256 debtShare = pos.debtShare;
+        uint112 debtShare = pos.debtShare;
         if (debtShare > 0) {
-            uint256 debtVal = debtShareToVal(_poolId, debtShare);
+            uint112 debtVal = debtShareToVal(_poolId, debtShare);
             pos.debtShare = 0;
-            pool.globalDebtShare = (pool.globalDebtShare - debtShare);
-            pool.globalDebtValue = (pool.globalDebtValue - debtVal);
+            unchecked {
+                // @dev Underflow is very unlikely due to the debt share being derived from the position.
+                // This should create the assumption that pool.globalDebtShare >= pos.debtShare.
+                // Fuzzing advised to confirm though.
+                pool.globalDebtShare -= debtShare;
+                pool.globalDebtValue -= debtVal;
+            }
             emit RemoveDebt(_poolId, _posId, debtShare);
             return debtVal;
         } else {
