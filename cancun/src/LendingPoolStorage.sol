@@ -62,8 +62,6 @@ library LendingPoolStorage {
     function layout() internal pure returns (Layout storage l) {
         bytes32 slot = STORAGE_SLOT;
         assembly {
-            // We hardcode this slot to use less bytecode
-            // and save a small amount of gas not needing an MSTORE.
             l.slot := slot
         }
     }
