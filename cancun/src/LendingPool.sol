@@ -484,7 +484,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         if (block.timestamp > lendingPool.lastAccrueTime) {
             uint112 timePassed;
             unchecked {
-                // @dev Unless we somehow traveled back in time, the odds of this underlying is zero.
+                // @dev Unless we somehow traveled back in time, the odds of this underflowing is zero.
                 timePassed = uint112(block.timestamp - lendingPool.lastAccrueTime);
             }
             uint112 balance = lendingPool.warchest.underlyingBalanceWithInvestment().u112();
