@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {Math} from "@solidstate/utils/Math.sol";
-import {ReentrancyGuard} from "@solidstate/security/reentrancy_guard/ReentrancyGuard.sol";
 import {Ownable} from "@solidstate/access/ownable/Ownable.sol";
 import {SolidStateERC20} from "@solidstate/token/ERC20/SolidStateERC20.sol";
 import {Initializable} from "@solidstate/security/initializable/Initializable.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
-import {LibZip} from "solady/src/utils/LibZip.sol";
+import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 import {LibTransient} from "solady/src/utils/LibTransient.sol";
+import {LendingPoolLib} from "./lib/LendingPoolLib.sol";
 import {Cast} from "./lib/Cast.sol";
 import {Errors, _require} from "./lib/Errors.sol";
 import {IWorker} from "./interfaces/IWorker.sol";
@@ -19,7 +18,8 @@ import {
     Market,
     Position,
     LendingPoolConfig,
-    InterestRateModel
+    InterestRateModel,
+    AuthType
 } from "./LendingPoolStorage.sol";
 
 /// @title Limestone Lending Pool Facet
@@ -149,7 +149,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         );
 
         // Update the position accordingly by repaying any current debt.
-        uint256 lessDebt = Math.min(debt, Math.min(back, _ctx.maxReturn));
+        uint256 lessDebt = FixedPointMathLib.min(debt, FixedPointMathLib.min(back, _ctx.maxReturn));
         debt = (debt - lessDebt);
         if (debt > 0) {
             _require(debt >= pool.minDebtSize, Errors.DEBT_TOO_SMALL);
@@ -159,6 +159,91 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         }
         // Send any surplus tokens to the user.
         if (back > lessDebt) pool.warchest.withdrawReserves(msg.sender, back - lessDebt);
+    }
+
+    /// @notice Borrows assets from the lending pool and delegates the debt management responsibility to the caller.
+    /// @dev This is a method restricted to specific privileged callers like the PositionCoordinator. Permitted contracts
+    /// must implement proper debt and liquidation management functions to avoid bad debt or other harms to the lending pool.
+    /// To mitigate potential harm, we also set a cap on the amount of debt per pool that delegated borrowers can make.
+    /// This is stored in the `Market` object under the property named `delegatedDebtAvailable`. Each borrow decrements the total amount.
+    /// @param _pools IDs of the lending pools to borrow from.
+    /// @param _amounts Amounts for each asset to borrow from the lending pools.
+    /// @param _debtHolder The contract that holds the debt.
+    function borrowDelegated(uint256[] calldata _pools, uint256[] calldata _amounts, address _debtHolder)
+        external
+        onlyEOA
+    {
+        LendingPoolStorage.Layout storage l = LendingPoolStorage.layout();
+        uint256[] memory debts = new uint256[](_pools.length);
+        for (uint256 i; i < _pools.length;) {
+            // Perform checks on the borrower.
+            uint256 poolId = _pools[i];
+            uint256 amount = _amounts[i];
+            Market storage pool = l.pools[poolId];
+            _accrue(poolId); // @dev This should help get the slots warmed up.
+            LendingPoolLib._verifyBorrowerPermissions(msg.sender, poolId, amount, false);
+
+            // Update current debt.
+            uint112 debtShares = debtValToShare(poolId, amount.u112());
+            unchecked {
+                // @dev Overflow unlikely. Can test though. We however, safe cast which should weed out
+                // potential cases where this has the possibility to overflow. If not, then we're kinda fucked?
+                pool.globalDebtValue += amount.u112();
+                pool.globalDebtShare += debtShares;
+                l.delegatedDebt[_debtHolder][poolId] += debtShares;
+                debts[i] = debtShares;
+            }
+
+            // Transfer assets to the debt holder and index the borrow event.
+            pool.underlying.safeTransfer(_debtHolder, amount);
+            emit DelegatedBorrow(poolId, _debtHolder, amount);
+
+            // forgefmt: disable-next-line
+            unchecked {++i;}
+        }
+    }
+
+    /// @notice Used by delegated debt holders (permitted contracts) to repay their debt to the lending pool.
+    /// @param _pools Pools to repay the debt on.
+    /// @param _amounts Amount of assets for each lending pool to repay.
+    /// @param _debtHolder The contract that holds the debt.
+    function repayDelegatedDebt(uint256[] calldata _pools, uint256[] calldata _amounts, address _debtHolder)
+        external
+        onlyEOA
+    {
+        LendingPoolStorage.Layout storage l = LendingPoolStorage.layout();
+        for (uint256 i; i < _pools.length;) {
+            // Perform checks on the borrower.
+            uint256 poolId = _pools[i];
+            uint256 amount = _amounts[i];
+            Market storage pool = l.pools[poolId];
+            _accrue(poolId); // @dev This should help get the slots warmed up.
+            LendingPoolLib._verifyBorrowerPermissions(msg.sender, poolId, amount, true);
+
+            // Update current debt.
+            uint112 debtShares = debtValToShare(poolId, amount.u112());
+            uint112 holderShares = l.delegatedDebt[_debtHolder][poolId];
+            if (debtShares > holderShares) {
+                // If the debt holder trying to repay more than what's owed, adjust their total amount
+                // so that it instead repays only the debt they owe and not a surplus that alters the entire pool's debt.
+                debtShares = holderShares;
+                amount = debtShareToVal(poolId, debtShares);
+            }
+            unchecked {
+                // @dev Underflow unlikely. Can test though. We however, safe cast and also validate the holder's shares,
+                // which should mitigate any potential cases that may arise. That said, we are once again fucked if that fails.
+                pool.globalDebtValue -= amount.u112();
+                pool.globalDebtShare -= debtShares;
+                l.delegatedDebt[_debtHolder][poolId] -= debtShares;
+                debts[i] = debtShares;
+            }
+
+            // Transfer assets from the debt holder.
+            pool.underlying.safeTransferFrom(_debtHolder, address(pool.warchest), amount);
+
+            // forgefmt: disable-next-line
+            unchecked {++i;}
+        }
     }
 
     /// @notice Increases the supplied collateral for a farming position.
@@ -249,15 +334,15 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
                 interestRateModel: _config.interestRateModel,
                 warchest: IWarchest(_warchest),
                 totalShares: 0,
+                delegatedDebtAvailable: type(uint88).max,
                 globalDebtValue: 0,
                 globalDebtShare: 0,
                 reservePool: 0
             })
         );
         uint256 poolId;
-        unchecked {
-            poolId = l.pools.length - 1;
-        }
+        // forgefmt: disable-next-line
+        unchecked {poolId = l.pools.length - 1;}
         emit MarketCreated(poolId, _underlying, _warchest, _config);
 
         // Add seed liquidity to the pool if needed.
@@ -265,6 +350,14 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
             _accrue(poolId);
             _deposit(poolId, msg.sender, _seedLiquidity);
         }
+    }
+
+    /// @notice Sets the total amount of delegated debt available for a specific market.
+    /// @param _poolId ID of the lending pool to set the delegated debt limit for.
+    /// @param _debt Total delegated debt amount to allocate.
+    function setDelegatedDebt(uint256 _poolId, uint88 _debt) external onlyOwner {
+        Market storage pool = LendingPoolStorage.layout().pools[_poolId];
+        pool.delegatedDebtAvailable = _debt;
     }
 
     /// @notice Sets whether liquidations are permissioned or not.
@@ -447,8 +540,15 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         if (block.timestamp > pool.lastAccrueTime) {
             uint112 interest = pendingInterest(_poolId);
             uint112 toReserve = ((interest * pool.reservePoolBps) / uint112(10000));
-            pool.reservePool = (pool.reservePool + toReserve);
-            pool.globalDebtValue = (pool.globalDebtValue + interest);
+            unchecked {
+                // @dev The fun part about this specifically is that if it does *somehow* overflow,
+                // it won't even affect user funds, it'll just redistribute these reserves to the lenders.
+                // So basically free money for them and a loss of revenue on our end. But also it's very unlikely
+                // that we could accrue so much interest that it'll be worth more than type(uint112).max (and not redeem before that happens).
+                pool.reservePool += toReserve;
+                // @dev Remember the movie Fight Club? That shouldn't happen here unless `interest` is somehow gigantic.
+                pool.globalDebtValue = (pool.globalDebtValue + interest);
+            }
             pool.lastAccrueTime = uint32(block.timestamp); // @dev can upgrade before 2102 (If we're still alive by then).
         }
     }
@@ -463,15 +563,13 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
             unchecked {
                 // We reserve a small amount (10 ** 3) of shares to prevent inflation attacks.
                 pool.warchest.mint(address(pool.warchest), MIN_SHARES);
-                // type(uint112).max is VERY big so the overflow risk really just isn't there.
+                // @dev type(uint112).max is VERY big so the overflow risk really just isn't there.
                 pool.totalShares += MIN_SHARES;
             }
         }
-        unchecked {
-            pool.warchest.mint(msg.sender, share);
-            // Same as the unchecked increase.
-            pool.totalShares += share.u112();
-        }
+        pool.warchest.mint(msg.sender, share);
+        // forgefmt: disable-next-line
+        unchecked {pool.totalShares += share.u112();}// @dev same as the other unchecked increase.
     }
 
     function _addDebt(uint256 _poolId, uint256 _posId, uint112 _debtValue) internal {

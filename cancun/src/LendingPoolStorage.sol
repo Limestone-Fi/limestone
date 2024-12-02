@@ -7,7 +7,8 @@ import {
     Market,
     Position,
     LendingPoolConfig,
-    InterestRateModel
+    InterestRateModel,
+    AuthType
 } from "./interfaces/ILendingPool.sol";
 import {IWarchest} from "./interfaces/IWarchest.sol";
 
@@ -26,9 +27,9 @@ library LendingPoolStorage {
 
     struct WorkerDebtParams {
         uint16 authorizedPoolId;
-        bool borrowable;
         uint16 workFactor;
         uint16 killFactor;
+        bool borrowable;
     }
 
     struct Layout {
@@ -46,6 +47,10 @@ library LendingPoolStorage {
         mapping(address keeper => bool) authorizedKeepers;
         /// @notice Liquidators that are authorized to liquidate positions (if permisioned liquidations are enabled).
         mapping(address liquidator => bool) authorizedLiquidators;
+        /// @notice Contracts authorized to borrow tokens via delegated borrowing.
+        mapping(address borrower => bool) authorizedContractBorrowers;
+        /// @notice The amount of debt borrowed via `borrowDelegated` held by a specific contract.
+        mapping(address debtHolder => mapping(uint256 poolId => uint112 debtShares)) delegatedDebt;
     }
 
     /// @dev Slot location for storing lending pool state variables at using the diamond storage pattern.

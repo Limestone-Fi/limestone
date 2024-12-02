@@ -187,6 +187,7 @@ library Errors {
     uint256 internal constant CANNOT_WITHDRAW_IF_INCREASING = 58;
     uint256 internal constant HEALTH_DID_NOT_INCREASE = 59;
     uint256 internal constant POSITION_NEAR_LIQ_THRESHOLD = 60;
+    uint256 internal constant NOT_PRIVILEGED_BORROWER = 61;
 
     // Workers // Rewards
     uint256 internal constant CALLER_NOT_GOV_OR_REWARD_DIST = 31;
@@ -206,4 +207,6 @@ library Errors {
     uint256 internal constant SPOT_TOO_HIGH = 50;
     uint256 internal constant SPOT_TOO_LOW = 51;
     uint256 internal constant TOO_MUCH_SLIPPAGE = 52;
+
+    // Position Coordinator
 }

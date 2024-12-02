@@ -8,35 +8,70 @@ enum InterestRateModel {
     TripleSlope
 }
 
+/// @notice Forms of authorizations that may be granted.
+enum AuthType {
+    Keeper,
+    Liquidator,
+    Contract
+}
+
 /// @notice Parameters used by lending pools.
 struct LendingPoolConfig {
+    /// @notice The percentage of interest that is distributed to the protocol as fees.
+    /// @dev Fixed to a precision of 10000 bps. Cannot be changed (without changing the code itself).
     uint16 reservePoolBps;
+    /// @notice The percentage of liquidated collateral that is rewarded to liquidators.
+    /// @dev Similar to `reservePoolBps`. 1000 bps precision.
     uint16 liquidateBps;
+    /// @notice The interest rate model employed by the specific lending market. Currently only supports Triple Slope.
     InterestRateModel interestRateModel;
-    uint112 minDebtSize;
+    /// @notice Minimum amount of debt that a user must take on when opening a position.
+    uint96 minDebtSize;
 }
 
 /// @notice Leveraged yield farming position.
 struct Position {
+    /// @notice The worker currently managing the position.
     address worker;
+    /// @notice The owner of the position.
     address owner;
+    /// @notice The ID of the lending pool that the position is borrowing from.
     uint32 poolId;
+    /// @notice Total amount of debt shares held by the position.
     uint112 debtShare;
 }
 
 /// @notice Lending pool configuration and data.
+/// @dev Packed to the best ability to reduce runtime costs.
+/// Slightly more expensive upon the initial call to `addPool` though.
 struct Market {
-    address underlying;
-    uint32 lastAccrueTime;
-    uint112 minDebtSize;
-    uint16 reservePoolBps;
-    uint16 liquidateBps;
-    InterestRateModel interestRateModel;
-    IWarchest warchest;
+    /// @notice Total supply of lending pool shares.
+    /// @dev To avoid potential inflation attacks, this is always a minimum of 10**3 shares.
     uint112 totalShares;
+    /// @notice Timestamp of the last time that interest was accrued at.
+    uint32 lastAccrueTime;
+    /// @notice Total amount of debt owed to the lending pool, including accrued interest.
     uint112 globalDebtValue;
+    /// @notice Total amount of debt shares of the lending pool, which hold act as a receipt for debt.
     uint112 globalDebtShare;
+    /// @notice The percentage of interest that is distributed to the protocol as fees.
+    /// @dev Fixed to a precision of 10000 bps. Cannot be changed (without changing the code itself).
+    uint16 reservePoolBps;
+    /// @notice The percentage of liquidated collateral that is rewarded to liquidators.
+    /// @dev Similar to `reservePoolBps`. 10000 bps precision.
+    uint16 liquidateBps;
+    /// @notice The total amount of fees accumulated from interest by the protocol. Claimable by `owner()`.
     uint112 reservePool;
+    /// @notice The interest rate model employed by the specific lending market. Currently only supports Triple Slope.
+    InterestRateModel interestRateModel;
+    /// @notice The lending pool warchest which acts as a receipt token for lending pool shares and stores its assets.
+    IWarchest warchest;
+    // @notice Total amount of debt that can be delegated to other contracts.
+    uint88 delegatedDebtAvailable;
+    /// @notice Minimum amount of debt that a user must take on when opening a position.
+    uint96 minDebtSize;
+    /// @notice The underlying asset of the lending pool which is used as collateral and for borrowing.
+    address underlying;
 }
 
 /// @notice Lending Pool Interface
@@ -74,6 +109,12 @@ interface ILendingPool {
     /// @param posId ID of the position that borrowed the assets.
     /// @param loan The amount of assets that was lent to the position.
     event Borrow(uint256 indexed poolId, uint256 indexed posId, uint256 loan);
+
+    /// @notice Emitted when a contract borrows assets from the lending pool via the `DelegatedBorrow` method.
+    /// @param poolId ID of the lending pool that assets were borrowed from.
+    /// @param debtHolder The contract holding the token debt.
+    /// @param borrowed The amount of assets borrowed by the `debtHolder`.
+    event DelegatedBorrow(uint256 indexed poolId, address indexed debtHolder, uint256 borrowed);
 
     /// @notice Emitted when collateral is added to a leveraged position to increase its health.
     /// @param poolId ID of the pool that collateral was added towards.
