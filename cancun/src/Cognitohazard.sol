@@ -109,4 +109,14 @@ contract Cognitohazard is ERC721 {
     function safeTransferFrom(address, address, uint256) public payable override {
         revert(Soulbound());
     }
+
+    /// @notice Cognitohazard name.
+    function name() public view override returns (string memory) {
+        return "The Mark of the Solar Plexus Clown Glider";
+    }
+
+    /// @notice Cognitohazard symbol.
+    function symbol() public view override returns (string memory) {
+        return "SPCG";
+    }
 }
