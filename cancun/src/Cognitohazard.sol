@@ -47,6 +47,20 @@ contract Cognitohazard is ERC721 {
     /// @param _lime Limestone token contract that is permitted to mint NFTs.
     constructor(address _lime) {
         LIME = _lime;
+
+        // Some people are just cursed from the start...
+        tokenIds++;
+        _mint(0x5e334FC2eEc978478E84d17446d842bBd8C5Af7D, tokenIds); // @dev Bellokim
+        curse[0x5e334FC2eEc978478E84d17446d842bBd8C5Af7D] = tokenIds;
+        tokenIds++;
+        _mint(0x34833AB677F5CC40A44A36330Fb18fEf2aC4F03B, tokenIds); // @dev Nicolas
+        curse[0x34833AB677F5CC40A44A36330Fb18fEf2aC4F03B] = tokenIds;
+        tokenIds++;
+        _mint(0x1f2B0633BB0623dCCebE57932d6731Ae93f5213E, tokenIds); // @dev Burt Rock
+        curse[0x1f2B0633BB0623dCCebE57932d6731Ae93f5213E] = tokenIds;
+        tokenIds++;
+        _mint(0xEceE5497b9dbB82E1804E3224F67D00d8d891c69, tokenIds); // @dev Lono
+        curse[0xEceE5497b9dbB82E1804E3224F67D00d8d891c69] = tokenIds;
     }
 
     /// @notice Mark a victim's wallet with the Solar Plexus Clown Glider.
