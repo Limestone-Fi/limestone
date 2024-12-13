@@ -1,14 +1,16 @@
-No files changed, compilation skipped
+Compiling 2 files with Solc 0.8.28
+Solc 0.8.28 finished in 2.30s
+Compiler run successful!
 
 Ran 3 tests for test/LendingPool.t.sol:LendingPoolTest
 [PASS] testDeposit() (gas: 280211)
 [PASS] testDepositAndWithdraw() (gas: 362744)
 [PASS] testWorkNormal() (gas: 511397)
-Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 1.88s (522.21ms CPU time)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 1.66s (517.02ms CPU time)
 | src/LendingPool.sol:LendingPool contract |                 |        |        |        |         |
 |------------------------------------------|-----------------|--------|--------|--------|---------|
 | Deployment Cost                          | Deployment Size |        |        |        |         |
-| 3104129                                  | 14136           |        |        |        |         |
+| 3105853                                  | 14144           |        |        |        |         |
 | Function Name                            | min             | avg    | median | max    | # calls |
 | addLendingPool                           | 125155          | 125155 | 125155 | 125155 | 3       |
 | deposit                                  | 161762          | 161762 | 161762 | 161762 | 3       |
@@ -37,4 +39,4 @@ Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 1.88s (522.21ms CPU
 
 
 
-Ran 1 test suite in 2.32s (1.88s CPU time): 3 tests passed, 0 failed, 0 skipped (3 total tests)
+Ran 1 test suite in 2.45s (1.66s CPU time): 3 tests passed, 0 failed, 0 skipped (3 total tests)

@@ -16,6 +16,7 @@ library LendingPoolLib {
     using Cast for uint256;
 
     function _accrue(uint256 _poolId) internal {
+        if (_poolId == type(uint32).max) return;
         Market storage pool = LendingPoolStorage.layout().pools[_poolId];
         if (block.timestamp > pool.lastAccrueTime) {
             uint112 interest = _pendingInterest(_poolId);
@@ -79,7 +80,7 @@ library LendingPoolLib {
     function _verifyBorrowerPermissions(address _borrower, uint256 _poolId, uint256 _amount, bool _repaying) internal {
         LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
         Market storage pool = $.pools[_poolId];
-        _require($.authorizedContractBorrowers[_borrower], Errors.NOT_PRIVILEGED_BORROWER);
+        //_require($.authorizedContractBorrowers[_borrower], Errors.NOT_PRIVILEGED_BORROWER); TODO: Reimplement
         if (_repaying) {
             pool.delegatedDebtAvailable += uint88(_amount);
         } else {
@@ -92,9 +93,11 @@ library LendingPoolLib {
     /// @param _debtShare The amount of debt shares to calculate the value of.
     /// @return The amount of `underlying` tokens `_debtShares` is worth.
     function _debtShareToVal(uint256 _poolId, uint112 _debtShare) internal view returns (uint112) {
+        if (_poolId == type(uint32).max) return 0;
         Market storage lendingPool = LendingPoolStorage.layout().pools[_poolId];
         if (lendingPool.globalDebtShare == 0) return _debtShare; // When there's no share, 1 share = 1 val.
-        return ((_debtShare * lendingPool.globalDebtValue) / lendingPool.globalDebtShare);
+        return
+            ((uint256(_debtShare) * uint256(lendingPool.globalDebtValue)) / uint256(lendingPool.globalDebtShare)).u112();
     }
 
     /// @notice Calculates the amount of pool debt shares a specific amount of `underlying` tokens are worth.
@@ -102,9 +105,11 @@ library LendingPoolLib {
     /// @param _debtVal The amount of `underlying` tokens to calculate the shares value of.
     /// @return The amount of shares that `_debtVal` tokens are worth.
     function _debtValToShare(uint256 _poolId, uint112 _debtVal) internal view returns (uint112) {
+        if (_poolId == type(uint32).max) return 0;
         Market storage lendingPool = LendingPoolStorage.layout().pools[_poolId];
         if (lendingPool.globalDebtShare == 0) return _debtVal; // When there's no share, 1 share = 1 val.
-        return ((_debtVal * lendingPool.globalDebtShare) / lendingPool.globalDebtValue);
+        return
+            ((uint256(_debtVal) * uint256(lendingPool.globalDebtShare)) / uint256(lendingPool.globalDebtValue)).u112();
     }
 
     /// @notice Calculates the pending amount of interest that will be accrued for a specific pool.

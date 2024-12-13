@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.28;
-
+/*
+import {ERC20} from "@openzeppelin/token/ERC20/ERC20.sol";
 import {Ownable} from "@openzeppelin/access/Ownable.sol";
-import {ERC20, OFT} from "@layerzero-labs/oft-evm/contracts/OFT.sol";
+import {OFT} from "@layerzerolabs/oft-evm/contracts/OFT.sol";
 import {Cognitohazard} from "./Cognitohazard.sol";
 
 /// @title LIME Token contract.
 /// @author Chainvisions
 /// @notice Limestone OFT contract.
 
-contract Lime is OFT, ERC20, Ownable {
+contract Lime is OFT, Ownable {
     /// @notice Thrown when `mintingComplete` is true.
     error MintingComplete();
 
@@ -69,4 +70,4 @@ contract Lime is OFT, ERC20, Ownable {
             try Cognitohazard(hazard).mark(_from) {} catch {}
         }
     }
-}
+}*/

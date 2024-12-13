@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {ERC721} from "solady/src/tokens/ERC721.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
+import {IERC20Extended} from "./interfaces/IERC20Extended.sol";
 
 /// @title Onchain Cognitohazard
 /// @author Chainvisions
@@ -70,7 +71,7 @@ contract Cognitohazard is ERC721 {
         require(msg.sender == LIME, NotLime());
 
         // Place the mark.
-        tokensIds++;
+        tokenIds++;
         _mint(_victim, tokenIds);
 
         // Broadcast for the entire world to see.
@@ -87,7 +88,7 @@ contract Cognitohazard is ERC721 {
         _burn(curseId);
         curse[msg.sender] = 0;
         LIME.safeTransferFrom(msg.sender, address(this), fee);
-        LIME.burn(fee);
+        IERC20Extended(LIME).burn(fee);
 
         // They are now free. Let us all rejoice.
         emit Cleansed(msg.sender);
@@ -107,16 +108,21 @@ contract Cognitohazard is ERC721 {
 
     /// @notice An overriden version of `safeTransferFrom` that turns the token into a Soulbound NFT.
     function safeTransferFrom(address, address, uint256) public payable override {
-        revert(Soulbound());
+        revert Soulbound();
     }
 
     /// @notice Cognitohazard name.
-    function name() public view override returns (string memory) {
+    function name() public pure override returns (string memory) {
         return "The Mark of the Solar Plexus Clown Glider";
     }
 
     /// @notice Cognitohazard symbol.
-    function symbol() public view override returns (string memory) {
+    function symbol() public pure override returns (string memory) {
         return "SPCG";
+    }
+
+    /// @notice Solar Plexus Clown Glider.
+    function tokenURI(uint256) public view override returns (string memory) {
+        return uriSource;
     }
 }

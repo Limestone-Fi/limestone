@@ -207,6 +207,8 @@ library Errors {
     uint256 internal constant SPOT_TOO_HIGH = 50;
     uint256 internal constant SPOT_TOO_LOW = 51;
     uint256 internal constant TOO_MUCH_SLIPPAGE = 52;
+    uint256 internal constant HEALTHCHECK_UNSKIPPABLE_IF_BORROWING = 53;
+    uint256 internal constant NO_LENDING_ARBITRAGE = 54;
 
     // Position Coordinator
 }

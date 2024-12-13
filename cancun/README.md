@@ -9,3 +9,7 @@ This is the workspace for Limestone's latest and upcoming smart contract updates
 - Position Coordinator contract which enables users to borrow on both sides of a liquidity pool. Manages liquidations on its own through the new delegated health management feature.
 - Multi Modal Worker, capable of supporting lending positions made by the Position Coordinator.
 - Protocol QoL changes made to avoid future technical debt.
+
+## Building
+To build locally: ``forge build``
+To build from the root monorepo: ``[npx] nx build cancun``

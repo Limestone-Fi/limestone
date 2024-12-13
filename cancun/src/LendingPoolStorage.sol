@@ -54,7 +54,7 @@ library LendingPoolStorage {
     }
 
     /// @dev Slot location for storing lending pool state variables at using the diamond storage pattern.
-    bytes32 internal constant STORAGE_SLOT = keccak256("limestone.contracts.storage.LendingPool");
+    bytes32 internal constant STORAGE_SLOT = keccak256("limestone.contracts.storage.LendingPoolFacet");
 
     /// @dev Slot location used for storing the execution scope in transient storage.
     bytes32 internal constant EXECUTION_SCOPE_SLOT = keccak256("limestone.contracts.transient.LendingPool.ExecScope");

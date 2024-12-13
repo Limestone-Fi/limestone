@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {Test, console} from "forge-std/Test.sol";
+import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {LibZip} from "solady/src/utils/LibZip.sol";
 import {LendingPool, LendingPoolConfig, InterestRateModel, LendingPoolStorage} from "../src/LendingPool.sol";
 import {MockToken} from "./mocks/MockToken.sol";
@@ -43,6 +44,7 @@ contract LendingPoolTest is Test {
             workFactor: 7500,
             killFactor: 8000
         });
+        //StdInvariant.targetContract(address(lp));
     }
 
     function testDeposit() public {
@@ -79,4 +81,22 @@ contract LendingPoolTest is Test {
         });
         lp.doHardWork(0, ctx);
     }
+
+    function testFuzzDepositAndWithdraw(uint256 _amount) public {
+        vm.assume(_amount > 10 ** 3);
+        vm.assume(_amount < type(uint112).max);
+        vm.startPrank(address(1), address(1));
+        collateral.mint(address(1), _amount);
+        uint256 startingBalance = collateral.balanceOf(address(1));
+        collateral.approve(address(lp), _amount);
+        lp.deposit(0, _amount);
+        assertEq(warchest.balanceOf(address(1)), _amount - 10 ** 3);
+        lp.withdraw(0, _amount - 10 ** 3);
+        assertEq(collateral.balanceOf(address(1)), startingBalance - 10 ** 3);
+    }
+
+    /*
+    function invariant_totalTokensAndSupply() public {
+        assert(lp.totalTokens(0) >= warchest.totalSupply());
+    }*/
 }

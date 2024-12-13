@@ -21,6 +21,10 @@ struct V2LikePositionInvestmentContext {
     uint256 token1Borrow;
     /// @notice Minimum amount of liquidity to mint when investing.
     uint256 minLiquidityMinted;
+    /// @notice Enables adding collateral during periods of volatility without
+    /// the need for a healthcheck call. Validates reserves instead. Can only be
+    /// done if `token0Borrow` and `token1Borrow` are `0`. Otherwise it will revert.
+    bool skipHealthcheck;
 }
 
 /// @notice Execution context for `investInBalancerLikePosition()`.
@@ -61,8 +65,9 @@ struct V2LikePositionDivestmentContext {
     uint256 positionId;
     /// @notice Address of the worker to divest from.
     address worker;
-    /// @notice Amount of liquidity to burn from the position.
-    uint256 liquidityToBurn;
+    /// @notice Percentage of the position to burn.
+    uint16 positionBps;
+    //uint256 liquidityToBurn;
     /// @notice Minimum amount of token0 to receive from burning liquidity.
     uint256 minToken0Out;
     /// @notice Minimum amount of token1 to receive from burning liquidity.
@@ -71,6 +76,8 @@ struct V2LikePositionDivestmentContext {
     uint256 token0Repay;
     /// @notice Amount of token1 to use towards repaying debt.
     uint256 token1Repay;
+    /// @notice Which side to receive from the withdrawal.
+    uint8 side;
     /// @notice Whether or not the withdrawal should be minimal (send both assets).
     bool minimalWithdrawal;
 }
@@ -108,6 +115,25 @@ struct ClaimWorkerRewardsContext {
 /// @notice Interface for the Limestone Position Coordinator facet.
 
 interface IPositionCoordinator {
+    event PositionInvested(
+        uint256 indexed positionId,
+        address indexed user,
+        address indexed worker,
+        uint256 token0In,
+        uint256 token1In,
+        uint256 token0Borrowed,
+        uint256 token1Borrowed
+    );
+    event PositionDivested(
+        uint256 indexed positionId,
+        address indexed worker,
+        uint256 liquidityBurnt,
+        uint256 token0Out,
+        uint256 token1Out,
+        uint256 token0Repaid,
+        uint256 token1Repaid
+    );
+
     function investInV2LikePosition(V2LikePositionInvestmentContext calldata _ctx) external;
     function divestFromV2LikePosition(V2LikePositionDivestmentContext calldata _ctx) external;
     function repayV2LikeLiquidityPositionDebt(
@@ -117,6 +143,7 @@ interface IPositionCoordinator {
         uint256 _token1Repay
     ) external;
     function liquidateV2LikePosition(V2LikePositionLiquidationContext calldata _ctx) external;
+    function accessAssets(address _user, address[] calldata _tokens, uint256[] calldata _amounts) external;
     //function divestAndRepayV2LikePosition(V2LikePositionDivestAndRepayContext _ctx) external;
-    function claimWorkerLimeRewards(ClaimWorkerRewardsContext[] calldata _ctx) external;
+    function reinvestmentFeeNumerator() external view returns (uint256);
 }

@@ -66,6 +66,12 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         _setOwner(msg.sender);
     }
 
+    /// @notice Reinitialization function for migrating between upgrades.
+    function scrubStorage() external {
+        LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
+        if ($.nextPositionID == 0) $.nextPositionID = 1;
+    }
+
     /// @notice Deposits tokens into a lending pool.
     /// @param _poolId ID of the lending pool to deposit into.
     /// @param _amount Amount of tokens to deposit into the lending pool.

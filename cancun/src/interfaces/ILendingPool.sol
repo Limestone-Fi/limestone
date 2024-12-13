@@ -183,4 +183,16 @@ interface ILendingPool {
     /// @notice Fetches all of the stored lending pools.
     /// @return An array of all lending pools on the contract.
     function pools() external view returns (Market[] memory);
+
+    /// @notice Calculates the amount of tokens a specific amount of debt shares are worth.
+    /// @param _poolId ID of the pool to calculate share values for.
+    /// @param _debtShare The amount of debt shares to calculate the value of.
+    /// @return The amount of `underlying` tokens `_debtShares` is worth.
+    function debtShareToVal(uint256 _poolId, uint112 _debtShare) external view returns (uint112);
+
+    /// @notice Calculates the amount of pool debt shares a specific amount of `underlying` tokens are worth.
+    /// @param _poolId ID of the pool to calculate shares from.
+    /// @param _debtVal The amount of `underlying` tokens to calculate the shares value of.
+    /// @return The amount of shares that `_debtVal` tokens are worth.
+    function debtValToShare(uint256 _poolId, uint112 _debtVal) external view returns (uint112);
 }
