@@ -6,9 +6,6 @@ evm_version = "cancun"
 via-ir = true
 bytecode_hash = "none"
 
-#[fuzz]
-#runs = 50000 # From Crab: I have a beefy Ryzen 9 so idgaf about the overhead :)
-
 [soldeer]
 remappings_version = false
 remappings_location = "txt"

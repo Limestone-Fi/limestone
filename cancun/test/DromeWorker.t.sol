@@ -78,6 +78,7 @@ contract DromeWorkerTest is Test, AddressBook {
             action: IERC2535DiamondCutInternal.FacetCutAction.REMOVE,
             selectors: selectors
         });*/
+        // TODO: I need to remove this ^ and use it for the deploy script.
 
         // Setup replacement cut for the new lending pool facet.
         selectorIndex = 0;
@@ -109,18 +110,6 @@ contract DromeWorkerTest is Test, AddressBook {
             action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
             selectors: selectors
         });
-
-        /*
-        // Remove some unused functions as well.
-        selectorIndex = 0;
-        selectors = new bytes4[](2);
-        selectors[selectorIndex++] = LendingPool.manageKeepers.selector;
-        selectors[selectorIndex++] = LendingPool.manageLiquidators.selector;
-        facetCuts[3] = IERC2535DiamondCutInternal.FacetCut({
-            target: address(0),
-            action: IERC2535DiamondCutInternal.FacetCutAction.REMOVE,
-            selectors: selectors
-        });*/
 
         vm.prank(ONETICKWARRIOR);
         SolidStateDiamond(payable(LIMESTONE_DIAMOND)).diamondCut(
@@ -427,23 +416,5 @@ contract DromeWorkerTest is Test, AddressBook {
         PositionCoordinator(LIMESTONE_DIAMOND).divestFromV2LikePosition(divCtx);
         uint256 newBalance = IERC20(BASE_USDC).balanceOf(TESTER);
         assertGt(newBalance, startingBalance);
-    }
-
-    function _createInvestmentCtx(
-        address _worker,
-        uint256 _token0In,
-        uint256 _token1In,
-        uint256 _token0Borrow,
-        uint256 _token1Borrow,
-        uint256 _token0Pid,
-        uint256 _token1Pid
-    ) internal view returns (V2LikePositionInvestmentContext memory ctx) {
-        ctx.worker = _worker;
-        ctx.token0In = _token0In;
-        ctx.token1In = _token1In;
-        ctx.token0PoolId = _token0Pid;
-        ctx.token1PoolId = _token1Pid;
-        ctx.token0Borrow = _token0Borrow;
-        ctx.token1Borrow = _token1Borrow;
     }
 }
