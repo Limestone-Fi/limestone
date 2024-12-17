@@ -1,0 +1,90 @@
+{
+  "fuzzing": {
+    "workers": 16,
+    "workerResetLimit": 50,
+    "timeout": 0,
+    "testLimit": 100000000,
+    "shrinkLimit": 5000,
+    "callSequenceLength": 100,
+    "corpusDirectory": "medusa-corpus",
+    "coverageEnabled": true,
+    "targetContracts": ["Fuzz"],
+    "deploymentOrder": ["MockUsdc", "MockAero", "LendingPoolWrapper", "Fuzz"],
+    "constructorArgs": {},
+    "predeployedContracts": {
+      "LendingPoolWrapper": "0x01000006b888030018000000D1e1AA171700fb8D",
+      "MockUsdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "MockAero": "0x940181a94A35A4569E4529A3CDfB74e38FD98631"
+    },
+    "targetContractsBalances": [],
+    "deployerAddress": "0x30000",
+    "senderAddresses": [
+      "0x10000",
+      "0x20000",
+      "0x30000"
+    ],
+    "blockNumberDelayMax": 60480,
+    "blockTimestampDelayMax": 604800,
+    "blockGasLimit": 125000000,
+    "transactionGasLimit": 12500000,
+    "testing": {
+      "stopOnFailedTest": false,
+      "stopOnFailedContractMatching": false,
+      "stopOnNoTests": true,
+      "testAllContracts": false,
+      "traceAll": true,
+      "assertionTesting": {
+        "enabled": true,
+        "testViewMethods": false,
+        "panicCodeConfig": {
+          "failOnCompilerInsertedPanic": false,
+          "failOnAssertion": true,
+          "failOnArithmeticUnderflow": false,
+          "failOnDivideByZero": false,
+          "failOnEnumTypeConversionOutOfBounds": false,
+          "failOnIncorrectStorageAccess": false,
+          "failOnPopEmptyArray": false,
+          "failOnOutOfBoundsArrayAccess": false,
+          "failOnAllocateTooMuchMemory": false,
+          "failOnCallUninitializedVariable": false
+        }
+      },
+      "propertyTesting": {
+        "enabled": true,
+        "testPrefixes": [
+          "fuzz_"
+        ]
+      },
+      "optimizationTesting": {
+        "enabled": true,
+        "testPrefixes": [
+          "optimize_"
+        ]
+      },
+      "targetFunctionSignatures": [],
+      "excludeFunctionSignatures": []
+    },
+    "chainConfig": {
+      "codeSizeCheckDisabled": true,
+      "cheatCodes": {
+        "cheatCodesEnabled": true,
+        "enableFFI": false
+      },
+      "skipAccountChecks": true
+    }
+  },
+  "compilation": {
+    "platform": "crytic-compile",
+    "platformConfig": {
+      "target": ".",
+      "solcVersion": "",
+      "exportDirectory": "",
+      "args": ["--compile-force-framework", "foundry"]
+    }
+  },
+  "logging": {
+    "level": "info",
+    "logDirectory": "",
+    "noColor": false
+  }
+}

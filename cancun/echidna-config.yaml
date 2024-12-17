@@ -1,0 +1,10 @@
+workers: 13
+symExec: true
+symExecNSolvers: 3
+testMode: assertion
+corpusDir: echidna-corpus
+deployer: "0x30000"
+testLimit: 250000000 # We will aim for 250m runs.
+solcArgs: "--base-path . --include-path lib/ --include-path dependencies/ --solc-remaps @openzeppelin/=dependencies/@openzeppelin-contracts-5.1.0-rc.0/ @solidstate/=dependencies/@solidstate-contracts-0.0.60/ forge-std/=dependencies/forge-std-1.9.4/src/ @perimetersec/fuzzlib/=dependencies/perimetersec-fuzzlib-0.3.1/ @layerzerolabs/oft-evm/=dependencies/@layerzerolabs-oft-evm-3.0.0/ solady/=dependencies/solady-0.0.273/"
+sender: ["0x10000", "0x20000", "0x30000"]
+deployContracts: [["0x01000006b888030018000000D1e1AA171700fb8D", "LendingPoolWrapper"], ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "MockUsdc"], ["0x940181a94A35A4569E4529A3CDfB74e38FD98631", "MockAero"]]

@@ -3,7 +3,7 @@ src = "src"
 out = "out"
 libs = ["dependencies"]
 evm_version = "cancun"
-via-ir = true
+#via-ir = true
 bytecode_hash = "none"
 
 [soldeer]
@@ -16,3 +16,4 @@ solady = "0.0.273"
 "@openzeppelin-contracts" = "5.1.0-rc.0"
 "@solidstate-contracts" = "0.0.60"
 "@layerzerolabs-oft-evm" = "3.0.0"
+perimetersec-fuzzlib = "0.3.1"

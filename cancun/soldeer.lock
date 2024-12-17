@@ -27,6 +27,13 @@ checksum = "b5be24beb5e4dab5e42221b2ad1288b64c826bee5ee71b6159ba93ffe86f14d4"
 integrity = "3874463846ab995a6a9a88412913cacec6144f7605daa1af57c2d8bf3f210b13"
 
 [[dependencies]]
+name = "perimetersec-fuzzlib"
+version = "0.3.1"
+url = "https://soldeer-revisions.s3.amazonaws.com/perimetersec-fuzzlib/0_3_1_30-09-2024_14:27:40_perimetersec-fuzzlib-0.3.zip"
+checksum = "80b9e2649dabfedb76ec2ed041eaaf4a2a28a07a5b76ae0360f3ced95e70abf5"
+integrity = "5675c45009ce6ac23f61845d07650e823c9329edf3d45f4bfaad23afbe50d693"
+
+[[dependencies]]
 name = "solady"
 version = "0.0.273"
 url = "https://soldeer-revisions.s3.amazonaws.com/solady/0_0_273_28-11-2024_11:57:29_solady.zip"
