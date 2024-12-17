@@ -133,7 +133,7 @@ contract FuzzLendingPool is FuzzSetup {
         // Validate leverage invariant (shouldn't exceed max 3x leverage).
         (uint256 positionEquity, uint256 positionDebt) = lendingPool.positionInfo(nextPositionID);
         uint256 leverage = positionEquity > positionDebt ? (positionEquity - positionDebt) * 300 : 0;
-        fl.gte(leverage, positionEquity * 100, "CREATE-LEGACY-2: Newly created position is overleveraged");
+        fl.gte(leverage, positionEquity * 100, "CREATE-LEGACY-03: Newly created position is overleveraged");
         nextPositionID++;
     }
 
