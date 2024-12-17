@@ -26,6 +26,54 @@ contract DromeMultiModalWorker is MultiModalWorker {
     using SafeTransferLib for address;
     using Cast for uint256;
 
+    /// @notice Structure for position value calculation related vars.
+    /// @dev Used to avoid stack-too-deep errors when not using Yul IR (important for fuzzing).
+    struct PositionValueStack {
+        /// @dev The full unit of token0.
+        uint256 token0Decimals;
+        /// @dev The full unit of token1.
+        uint256 token1Decimals;
+        /// @dev The total reserves of token0 in the liquidity pool.
+        uint256 reserve0;
+        /// @dev The total reserves of token1 in the liquidity pool.
+        uint256 reserve1;
+        /// @dev The TWAP price of token0.
+        uint256 price0;
+        /// @dev The TWAP price of token1.
+        uint256 price1;
+        /// @dev The fair asset reserve price for the pair LP token.
+        uint256 fairPrice;
+        /// @dev The total value (in token0) of the position's equity.
+        uint256 equityValue;
+        /// @dev The total value (in token0) of the position's debt.
+        uint256 totalDebtValue;
+        /// @dev The amount of debt in token0 that the position holds.
+        uint256 debt0;
+        /// @dev The amount of debt in token1 that the position holds.
+        uint256 debt1;
+    }
+
+    /// @notice Structure for liquidity provision related vars.
+    /// @dev Used to avoid stack-too-deep errors when not using Yul IR (important for fuzzing).
+    struct AddLiquidityStack {
+        /// @dev The total reserves of token0 in the liquidity pool.
+        uint256 reserve0;
+        /// @dev The total reserves of token1 in the liquidity pool.
+        uint256 reserve1;
+        /// @dev The default Drome factory for router calls and fee calculations.
+        address swapFactory;
+        /// @dev The optimal amount of tokens to swap when adding liquidity on both sides.
+        uint256 optimalAmount;
+        /// @dev Whether or not the swap using `optimalAmount` is reserves and requires token1 -> token0.
+        bool reversed;
+        /// @dev The amount of token0 to use for adding liquidity.
+        uint256 amount0;
+        /// @dev The amount of token1 to use for adding liquidity.
+        uint256 amount1;
+        /// @dev The amount of liquidity received from minting new liquidity.
+        uint256 liquidity;
+    }
+
     /// @notice Structure for storing token liquidation routes.
     struct Path {
         IDromeRouter.Route[] route;
@@ -48,41 +96,46 @@ contract DromeMultiModalWorker is MultiModalWorker {
     /// @param _to Token to swap to.
     /// @param _route Route for the swap.
     function setRoute(address _from, address _to, IDromeRouter.Route[] calldata _route) external onlyOwner {
-        routes[_from][_to] = _route;
+        for (uint256 i; i < _route.length;) {
+            routes[_from][_to].push(_route[i]);
+            // forgefmt: disable-next-line
+            unchecked { ++i; }
+        }
     }
 
     /// @notice Calculates the equity and debt value for a specified position.
     /// @param _posId ID of the position to calculate the value of.
     /// @return (equityValue, totalDebtValue) Total equity value (in token0) of the position and the total debt value (in token0).
     function calculatePositionValue(uint256 _posId) external view override returns (uint256, uint256) {
+        PositionValueStack memory stack;
         MultiModalWorkerStorage.LiquidityPool memory pool = MultiModalWorkerStorage._readPoolData();
-        (uint256 token0Decimals, uint256 token1Decimals, uint256 reserve0, uint256 reserve1,,,) =
+        (stack.token0Decimals, stack.token1Decimals, stack.reserve0, stack.reserve1,,,) =
             IDromePool(pool.pair).metadata();
 
         // Fetch TWAP price for the assets.
-        uint256 price0 = token0Decimals; // @dev Since we are only calculating the fair price in terms of token0, the price of token0 should just be one unit of token0.
-        uint256 price1 = IDromePool(pool.pair).quote(pool.token1, token1Decimals, 4);
+        stack.price0 = stack.token0Decimals; // @dev Since we are only calculating the fair price in terms of token0, the price of token0 should just be one unit of token0.
+        stack.price1 = IDromePool(pool.pair).quote(pool.token1, stack.token1Decimals, 4);
 
         // Normalize reserves to 1e18.
-        reserve0 = (reserve0 * 1e18) / token0Decimals;
-        reserve1 = (reserve1 * 1e18) / token1Decimals;
+        stack.reserve0 = (stack.reserve0 * 1e18) / stack.token0Decimals;
+        stack.reserve1 = (stack.reserve1 * 1e18) / stack.token1Decimals;
 
         // Calculate the fair price of the LP.
-        uint256 fairPrice = SwapUtils._getFairLpPrice(
-            token0Decimals,
-            token1Decimals,
-            reserve0,
-            reserve1,
-            price0,
-            price1,
+        stack.fairPrice = SwapUtils._getFairLpPrice(
+            stack.token0Decimals,
+            stack.token1Decimals,
+            stack.reserve0,
+            stack.reserve1,
+            stack.price0,
+            stack.price1,
             IDromePool(pool.pair).totalSupply(),
             pool.stableswap
         );
 
         // Calculate value of the position.
         MultiModalPosition storage pos = MultiModalWorkerStorage.layout().positions[_posId];
-        uint256 equityValue = (_sharesToTokens(pos.positionShares) * fairPrice) / (10 ** (18 + 6));
-        (uint256 totalDebtValue, uint256 debt0, uint256 debt1) = (
+        stack.equityValue = (_sharesToTokens(pos.positionShares) * stack.fairPrice) / (10 ** (18 + 6));
+        (stack.totalDebtValue, stack.debt0, stack.debt1) = (
             0,
             pos.debt0PoolId != type(uint32).max
                 ? ILimeDiamond(LIMESTONE_DIAMOND).debtShareToVal(pos.debt0PoolId, pos.debtShare0)
@@ -91,9 +144,10 @@ contract DromeMultiModalWorker is MultiModalWorker {
                 ? ILimeDiamond(LIMESTONE_DIAMOND).debtShareToVal(pos.debt1PoolId, pos.debtShare1)
                 : 0
         );
-        totalDebtValue = debt0 + (debt1 != 0 ? ((debt1 * price1) / token1Decimals) : 0);
+        stack.totalDebtValue =
+            stack.debt0 + (stack.debt1 != 0 ? ((stack.debt1 * stack.price1) / stack.token1Decimals) : 0);
 
-        return (equityValue, totalDebtValue);
+        return (stack.equityValue, stack.totalDebtValue);
     }
 
     /// @notice Determines the optimal path for a specific swap.
@@ -111,32 +165,48 @@ contract DromeMultiModalWorker is MultiModalWorker {
         uint256 _token1In,
         uint256 _minLiquidity
     ) internal override returns (uint256) {
-        (uint256 reserve0, uint256 reserve1,) = IDromePool(_pool.pair).getReserves();
-        address swapFactory = IDromeRouter(_pool.router).defaultFactory();
-        (uint256 optimalAmount, bool reversed) = SwapUtils._optimalZapAmountIn(
-            _token0In, _token1In, reserve0, reserve1, IDromeFactory(swapFactory).getFee(_pool.pair, _pool.stableswap)
+        AddLiquidityStack memory stack;
+        (stack.reserve0, stack.reserve1,) = IDromePool(_pool.pair).getReserves();
+        stack.swapFactory = IDromeRouter(_pool.router).defaultFactory();
+        (stack.optimalAmount, stack.reversed) = SwapUtils._optimalZapAmountIn(
+            _token0In,
+            _token1In,
+            stack.reserve0,
+            stack.reserve1,
+            IDromeFactory(stack.swapFactory).getFee(_pool.pair, _pool.stableswap)
         );
-        if (optimalAmount > 0) {
+        if (stack.optimalAmount > 0) {
             IDromeRouter.Route[] memory route = new IDromeRouter.Route[](1);
-            route[0] = reversed
-                ? IDromeRouter.Route({from: _pool.token1, to: _pool.token0, stable: _pool.stableswap, factory: swapFactory})
-                : IDromeRouter.Route({from: _pool.token0, to: _pool.token1, stable: _pool.stableswap, factory: swapFactory});
-            if (reversed) {
+            route[0] = stack.reversed
+                ? IDromeRouter.Route({
+                    from: _pool.token1,
+                    to: _pool.token0,
+                    stable: _pool.stableswap,
+                    factory: stack.swapFactory
+                })
+                : IDromeRouter.Route({
+                    from: _pool.token0,
+                    to: _pool.token1,
+                    stable: _pool.stableswap,
+                    factory: stack.swapFactory
+                });
+            if (stack.reversed) {
                 _pool.token1.safeApprove(_pool.router, 0);
-                _pool.token1.safeApprove(_pool.router, optimalAmount);
+                _pool.token1.safeApprove(_pool.router, stack.optimalAmount);
             } else {
                 _pool.token0.safeApprove(_pool.router, 0);
-                _pool.token0.safeApprove(_pool.router, optimalAmount);
+                _pool.token0.safeApprove(_pool.router, stack.optimalAmount);
             }
 
-            IDromeRouter(_pool.router).swapExactTokensForTokens(optimalAmount, 0, route, address(this), block.timestamp);
+            IDromeRouter(_pool.router).swapExactTokensForTokens(
+                stack.optimalAmount, 0, route, address(this), block.timestamp
+            );
         }
 
-        (uint256 amount0, uint256 amount1) =
-            (_pool.token0.balanceOf(address(this)), _pool.token1.balanceOf(address(this)));
-        _pool.token0.safeApprove(_pool.router, amount0);
-        _pool.token1.safeApprove(_pool.router, amount1);
-        (,, uint256 liquidity) = IDromeRouter(_pool.router).addLiquidity(
+        (stack.amount0, stack.amount1) = (_pool.token0.balanceOf(address(this)), _pool.token1.balanceOf(address(this)));
+        _pool.token0.safeApprove(_pool.router, stack.amount0);
+        _pool.token1.safeApprove(_pool.router, stack.amount1);
+        (,, stack.liquidity) = IDromeRouter(_pool.router).addLiquidity(
             _pool.token0,
             _pool.token1,
             _pool.stableswap,
@@ -147,8 +217,8 @@ contract DromeMultiModalWorker is MultiModalWorker {
             address(this),
             block.timestamp
         );
-        _require(liquidity >= _minLiquidity, Errors.TOO_MUCH_SLIPPAGE);
-        return liquidity;
+        _require(stack.liquidity >= _minLiquidity, Errors.TOO_MUCH_SLIPPAGE);
+        return stack.liquidity;
     }
 
     function _divestAndRemoveLiquidity(MultiModalWorkerStorage.LiquidityPool memory _pool, uint256 _liquidity)

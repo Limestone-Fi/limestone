@@ -8,6 +8,12 @@ import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 /// @notice A utility contract for calculating optimal swaps.
 
 library SwapUtils {
+    /// @notice Structure for fair price calculation vars.
+    struct FairPriceStack {
+        uint256 k;
+        uint256 p;
+    }
+
     function _optimalAmountIn(uint256 _swapFee, uint256 _reserveIn, uint256 _balanceOf)
         internal
         pure
@@ -66,21 +72,21 @@ library SwapUtils {
         uint256 _totalSupply,
         bool _stable
     ) internal pure returns (uint256) {
+        FairPriceStack memory stack;
         // Normalize reserves to 1e18.
         reserve0 = (reserve0 * 1e18) / token0Decimals;
         reserve1 = (reserve1 * 1e18) / token1Decimals;
 
         // Solve for K and the fair price ratio P.
-        (uint256 k, uint256 p) = (0, 0);
         if (_stable) {
-            k = FixedPointMathLib.sqrt(
+            stack.k = FixedPointMathLib.sqrt(
                 1e18
                     * FixedPointMathLib.sqrt(
                         (((((reserve0 * reserve1) / 1e18) * reserve1) / 1e18) * reserve1)
                             + (((((reserve1 * reserve0) / 1e18) * reserve0) / 1e18) * reserve0)
                     )
             );
-            p = FixedPointMathLib.sqrt(
+            stack.p = FixedPointMathLib.sqrt(
                 1e16
                     * FixedPointMathLib.sqrt(
                         1e16
@@ -91,9 +97,9 @@ library SwapUtils {
                     )
             );
         } else {
-            k = FixedPointMathLib.sqrt(reserve0 * reserve1);
-            p = FixedPointMathLib.sqrt(price0 * 1e16 * price1);
+            stack.k = FixedPointMathLib.sqrt(reserve0 * reserve1);
+            stack.p = FixedPointMathLib.sqrt(price0 * 1e16 * price1);
         }
-        return (2 * p * k) / (1e8 * _totalSupply);
+        return (2 * stack.p * stack.k) / (1e8 * _totalSupply);
     }
 }

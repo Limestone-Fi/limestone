@@ -86,7 +86,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     function withdraw(uint256 _poolId, uint256 _shares) external override {
         _poolId._accrue();
         Market storage pool = LendingPoolStorage.layout().pools[_poolId];
-        uint256 amount = ((_shares * totalTokens(_poolId)) / pool.totalShares);
+        uint256 amount = ((_shares * totalTokens(_poolId)) / uint256(pool.totalShares));
         pool.warchest.burn(msg.sender, _shares);
         unchecked {
             // Overflow is literally impossible as total shares will always be MIN_SHARES at minimum.
@@ -141,17 +141,10 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         // Send assets to the worker to execute the leveraged yield farming position and calculate tokens received back.
         uint256 back;
         uint256 toInvest = (_ctx.amountIn + _ctx.loan);
-        uint256 warchestAssets = pool.underlying.balanceOf(address(pool.warchest));
-        bool sufficientLiquidity = warchestAssets >= toInvest;
-        uint256 tokensBefore =
-            (sufficientLiquidity ? warchestAssets : pool.warchest.underlyingBalanceWithInvestment() - toInvest);
+        uint256 tokensBefore = pool.warchest.underlyingBalanceWithInvestment() - toInvest;
         pool.warchest.withdrawReserves(_ctx.worker, toInvest);
         IWorker(_ctx.worker).work(_id, msg.sender, debt, _ctx.data);
-        back = (
-            sufficientLiquidity
-                ? pool.underlying.balanceOf(address(pool.warchest))
-                : pool.warchest.underlyingBalanceWithInvestment() - tokensBefore
-        );
+        back = (pool.warchest.underlyingBalanceWithInvestment() - tokensBefore);
 
         // Update the position accordingly by repaying any current debt.
         uint256 lessDebt = FixedPointMathLib.min(debt, FixedPointMathLib.min(back, _ctx.maxReturn));
@@ -327,25 +320,22 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     ) external onlyOwner {
         // Push lending pool to storage.
         LendingPoolStorage.Layout storage l = LendingPoolStorage.layout();
-        l.pools.push(
-            Market({
-                underlying: _underlying,
-                lastAccrueTime: uint32(block.timestamp),
-                minDebtSize: _config.minDebtSize,
-                reservePoolBps: _config.reservePoolBps,
-                liquidateBps: _config.liquidateBps,
-                interestRateModel: _config.interestRateModel,
-                warchest: IWarchest(_warchest),
-                totalShares: 0,
-                delegatedDebtAvailable: type(uint88).max,
-                globalDebtValue: 0,
-                globalDebtShare: 0,
-                reservePool: 0
-            })
-        );
-        uint256 poolId;
-        // forgefmt: disable-next-line
-        unchecked {poolId = l.pools.length - 1;}
+        uint256 poolId = l.totalLendingPools;
+        l.pools[poolId] = Market({
+            underlying: _underlying,
+            lastAccrueTime: uint32(block.timestamp),
+            minDebtSize: _config.minDebtSize,
+            reservePoolBps: _config.reservePoolBps,
+            liquidateBps: _config.liquidateBps,
+            interestRateModel: _config.interestRateModel,
+            warchest: IWarchest(_warchest),
+            totalShares: 0,
+            delegatedDebtAvailable: type(uint88).max,
+            globalDebtValue: 0,
+            globalDebtShare: 0,
+            reservePool: 0
+        });
+        l.totalLendingPools++;
         emit MarketCreated(poolId, _underlying, _warchest, _config);
 
         // Add seed liquidity to the pool if needed.
@@ -476,7 +466,14 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @notice Fetches all of the stored lending pools.
     /// @return An array of all lending pools on the contract.
     function pools() external view override returns (Market[] memory) {
-        return (LendingPoolStorage.layout().pools);
+        LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
+        Market[] memory all = new Market[]($.totalLendingPools);
+        for (uint256 i; i < $.totalLendingPools;) {
+            all[i] = $.pools[i];
+            // forgefmt: disable-next-line
+            unchecked { ++i; }
+        }
+        return all;
     }
 
     /// @notice Calculates the amount of tokens a specific amount of debt shares are worth.
@@ -516,8 +513,8 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     function totalTokens(uint256 _poolId) public view returns (uint256) {
         Market storage lendingPool = LendingPoolStorage.layout().pools[_poolId];
         return (
-            (lendingPool.warchest.underlyingBalanceWithInvestment() + lendingPool.globalDebtValue)
-                - lendingPool.reservePool
+            (lendingPool.warchest.underlyingBalanceWithInvestment() + uint256(lendingPool.globalDebtValue))
+                - uint256(lendingPool.reservePool)
         );
     }
 
@@ -526,7 +523,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         Market storage pool = l.pools[_poolId];
         pool.underlying.safeTransferFrom(_depositor, address(pool.warchest), _amount);
         uint256 total = (totalTokens(_poolId) - _amount);
-        uint256 share = total == 0 ? _amount - MIN_SHARES : ((_amount * pool.totalShares) / total);
+        uint256 share = total == 0 ? _amount - MIN_SHARES : ((_amount * uint256(pool.totalShares)) / total);
         if (total == 0) {
             unchecked {
                 // We reserve a small amount (10 ** 3) of shares to prevent inflation attacks.

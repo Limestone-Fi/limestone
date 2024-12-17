@@ -37,8 +37,10 @@ library LendingPoolStorage {
         bool permissionedLiquidation;
         /// @notice ID for the next LYF position.
         uint256 nextPositionID;
+        /// @notice Value for tracking all of the lending pools.
+        uint256 totalLendingPools;
         /// @notice All lending pools for the protocol.
-        Market[] pools;
+        mapping(uint256 => Market) pools;
         /// @notice Leveraged yield farming positions.
         mapping(uint256 posId => Position) positions;
         /// @notice Debt parameters for a specific worker.

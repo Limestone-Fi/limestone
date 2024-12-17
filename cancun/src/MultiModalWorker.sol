@@ -27,6 +27,61 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
     using SafeTransferLib for address;
     using Cast for uint256;
 
+    /// @notice Structure for worker investment related vars.
+    /// @dev Used to avoid stack-too-deep errors when not using Yul IR (important for fuzzing).
+    struct InvestStack {
+        /// @dev ID of the worker position.
+        uint256 posId;
+        /// @dev The total amount of token0 to invest, including borrowed tokens.
+        uint256 token0In;
+        /// @dev The total amount of token1 to invest, including borrowed tokens.
+        uint256 token1In;
+        /// @dev The amount of liquidity minted from creating the position.
+        uint256 liquidity;
+        /// @dev The amount of worker shares that the position has been issued.
+        uint112 positionShares;
+    }
+
+    /// @notice Structure for worker divestment related vars.
+    /// @dev Used to avoid stack-too-deep errors when not using Yul IR (important for fuzzing).
+    struct DivestStack {
+        /// @dev Pool data.
+        MultiModalWorkerStorage.LiquidityPool pool;
+        /// @dev The amount of shares to remove from the position.
+        uint112 sharesToRemove;
+        /// @dev The amount of token0 received back from removing liquidity + repayment.
+        uint256 amount0;
+        /// @dev The amount of token1 received back from removing liquidity + repayment.
+        uint256 amount1;
+        /// @dev Whether or not token0 or token1 was borrowed. Used in their own respective cases.
+        bool borrowed;
+    }
+
+    /// @notice Structure for liquidation related vars.
+    /// @dev Used to avoid stack-too-deep errors when not using Yul IR (important for fuzzing).
+    struct LiquidateStack {
+        /// @dev The amount of debt in token0 held by the position.
+        uint112 debt0;
+        /// @dev The amount of debt in token1 held by the position.
+        uint112 debt1;
+        /// @dev The amount of token0 repaid to the lending pool.
+        uint256 token0Repaid;
+        /// @dev The amount of token1 repaid to the lending pool.
+        uint256 token1Repaid;
+        /// @dev The total amount of LP tokens to withdraw for liquidating the position.
+        uint256 totalTokens;
+        /// @dev The amount of worker shares to remove from the position.
+        uint112 shares;
+        /// @dev The amount of token0 received back after repayment and fees.
+        uint256 amount0;
+        /// @dev The amount of token1 received back after repayment and fees.
+        uint256 amount1;
+        /// @dev The fee in token0 to send to the liquidator as a reward.
+        uint256 fee0;
+        /// @dev The fee in token1 to send to the liquidator as a reward.
+        uint256 fee1;
+    }
+
     /// @notice Limestone diamond contract. Typically never changes so it is a constant.
     address public constant LIMESTONE_DIAMOND = 0x01000006b888030018000000D1e1AA171700fb8D;
 
@@ -76,18 +131,19 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
         uint112 _debtShare1
     ) external override onlyDiamond returns (uint256) {
         MultiModalWorkerStorage.Layout storage $ = MultiModalWorkerStorage.layout();
+        InvestStack memory stack;
         // Validate current position ID and update rewards in advance.
-        uint256 posId;
+        stack.posId;
         if (_ctx.positionId == 0) {
             // forgefmt: disable-next-line
-            unchecked {posId = $.nextPositionId++;}
-            $.positions[posId].owner = _borrower;
+            unchecked {stack.posId = $.nextPositionId++;}
+            $.positions[stack.posId].owner = _borrower;
         } else {
             _require(_ctx.positionId < $.nextPositionId, Errors.MALFORMED_POS_ID);
-            _require(_borrower == $.positions[posId].owner, Errors.NOT_POS_OWNER);
-            posId = _ctx.positionId;
+            _require(_borrower == $.positions[stack.posId].owner, Errors.NOT_POS_OWNER);
+            stack.posId = _ctx.positionId;
         }
-        MultiModalPosition storage pos = $.positions[posId];
+        MultiModalPosition storage pos = $.positions[stack.posId];
 
         MultiModalWorkerStorage.LiquidityPool memory pool = MultiModalWorkerStorage._readPoolData();
         address[] memory assets = new address[](2);
@@ -105,26 +161,26 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
         }
 
         // Invest supplied assets into the liquidity pool.
-        (uint256 token0In, uint256 token1In) = (_ctx.token0In + _ctx.token0Borrow, _ctx.token1In + _ctx.token1Borrow);
-        if (token0In > 0) {
+        (stack.token0In, stack.token1In) = (_ctx.token0In + _ctx.token0Borrow, _ctx.token1In + _ctx.token1Borrow);
+        if (stack.token0In > 0) {
             pool.token0.safeApprove(pool.router, 0);
-            pool.token0.safeApprove(pool.router, token0In);
+            pool.token0.safeApprove(pool.router, stack.token0In);
         }
 
-        if (token1In > 0) {
+        if (stack.token1In > 0) {
             pool.token1.safeApprove(pool.router, 0);
-            pool.token1.safeApprove(pool.router, token1In);
+            pool.token1.safeApprove(pool.router, stack.token1In);
         }
-        uint256 liquidity = _addLiquidity(pool, token0In, token1In, _ctx.minLiquidityMinted);
+        stack.liquidity = _addLiquidity(pool, stack.token0In, stack.token1In, _ctx.minLiquidityMinted);
 
         // Deposit liquidity into the reward pool and update the user's position.
-        uint112 positionShares = _investLiquidity(liquidity);
+        stack.positionShares = _investLiquidity(stack.liquidity);
         if ($.totalPositionShares == 0) {
-            $.totalPositionShares = positionShares;
-            pos.positionShares = positionShares - 10 ** 3; // @dev Reserves 10**3 shares to avoid inflation exploits.
+            $.totalPositionShares = stack.positionShares;
+            pos.positionShares = stack.positionShares - 10 ** 3; // @dev Reserves 10**3 shares to avoid inflation exploits.
         } else {
-            $.totalPositionShares += positionShares;
-            pos.positionShares += positionShares;
+            $.totalPositionShares += stack.positionShares;
+            pos.positionShares += stack.positionShares;
         }
         if (_debtShare0 > 0) pos.debtShare0 += _debtShare0;
         if (_debtShare1 > 0) pos.debtShare1 += _debtShare1;
@@ -155,7 +211,7 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
             );
         }
 
-        return posId;
+        return stack.posId;
     }
 
     function divest(V2LikePositionDivestmentContext calldata _ctx)
@@ -166,68 +222,75 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
     {
         MultiModalWorkerStorage.Layout storage $ = MultiModalWorkerStorage.layout();
         MultiModalPosition storage pos = $.positions[_ctx.positionId];
+        DivestStack memory stack;
 
         // Check current worker stability.
-        MultiModalWorkerStorage.LiquidityPool memory pool = MultiModalWorkerStorage._readPoolData();
-        _compareSpotAndOracle(pool);
+        stack.pool = MultiModalWorkerStorage._readPoolData();
+        _compareSpotAndOracle(stack.pool);
 
         // Withdraw liquidity, repay debt, and swap in accordance to parameters.
-        uint112 sharesToRemove = (pos.positionShares * _ctx.positionBps) / 10000;
-        (, uint256 amount0, uint256 amount1) = _divestAndRemoveLiquidity(pool, _sharesToTokens(sharesToRemove));
-        pos.positionShares -= sharesToRemove;
-        $.totalPositionShares -= sharesToRemove;
-        _require(amount0 >= _ctx.minToken0Out && amount1 >= _ctx.minToken1Out, Errors.TOO_MUCH_SLIPPAGE);
+        stack.sharesToRemove = (pos.positionShares * _ctx.positionBps) / 10000;
+        (, stack.amount0, stack.amount1) = _divestAndRemoveLiquidity(stack.pool, _sharesToTokens(stack.sharesToRemove));
+        pos.positionShares -= stack.sharesToRemove;
+        $.totalPositionShares -= stack.sharesToRemove;
+        _require(stack.amount0 >= _ctx.minToken0Out && stack.amount1 >= _ctx.minToken1Out, Errors.TOO_MUCH_SLIPPAGE);
 
         if (_ctx.token0Repay > 0) {
-            bool borrowed = pos.debtShare0 > 0;
-            if (borrowed) {
+            stack.borrowed = pos.debtShare0 > 0;
+            if (stack.borrowed) {
                 uint112 totalDebtValue = ILimeDiamond(LIMESTONE_DIAMOND).debtShareToVal(pos.debt0PoolId, pos.debtShare0);
                 uint112 repayAmount = FixedPointMathLib.min(uint112(_ctx.token0Repay), totalDebtValue).u112();
                 uint112 repayShares = ILimeDiamond(LIMESTONE_DIAMOND).debtValToShare(pos.debt0PoolId, repayAmount);
                 pos.debtShare0 -= repayShares;
-                if (repayAmount > amount0) {
-                    uint256 needed = repayAmount - amount0;
-                    _swapForExactAmount(pool.token1, pool.token0, needed);
-                    amount0 = 0;
-                    amount1 = pool.token1.balanceOf(address(this));
+                if (repayAmount > stack.amount0) {
+                    uint256 needed = repayAmount - stack.amount0;
+                    _swapForExactAmount(stack.pool.token1, stack.pool.token0, needed);
+                    stack.amount0 = 0;
+                    stack.amount1 = stack.pool.token1.balanceOf(address(this));
                 } else {
-                    amount0 -= repayAmount;
+                    stack.amount0 -= repayAmount;
                 }
             }
         }
 
         if (_ctx.token1Repay > 0) {
-            bool borrowed = pos.debtShare1 > 0;
-            if (borrowed) {
+            stack.borrowed = pos.debtShare1 > 0;
+            if (stack.borrowed) {
                 uint112 totalDebtValue = ILimeDiamond(LIMESTONE_DIAMOND).debtShareToVal(pos.debt1PoolId, pos.debtShare1);
                 uint112 repayAmount = FixedPointMathLib.min(uint112(_ctx.token1Repay), totalDebtValue).u112();
                 uint112 repayShares = ILimeDiamond(LIMESTONE_DIAMOND).debtValToShare(pos.debt1PoolId, repayAmount);
                 pos.debtShare1 -= repayShares;
-                if (repayAmount > amount1) {
-                    uint256 needed = repayAmount - amount1;
-                    _swapForExactAmount(pool.token0, pool.token1, needed);
-                    amount1 = 0;
-                    amount0 = pool.token1.balanceOf(address(this));
+                if (repayAmount > stack.amount1) {
+                    uint256 needed = repayAmount - stack.amount1;
+                    _swapForExactAmount(stack.pool.token0, stack.pool.token1, needed);
+                    stack.amount1 = 0;
+                    stack.amount0 = stack.pool.token1.balanceOf(address(this));
                 } else {
-                    amount1 -= repayAmount;
+                    stack.amount1 -= repayAmount;
                 }
             }
         }
 
         if (_ctx.minimalWithdrawal) {
-            pool.token0.safeTransfer(pos.owner, amount0);
-            pool.token1.safeTransfer(pos.owner, amount1);
+            stack.pool.token0.safeTransfer(pos.owner, stack.amount0);
+            stack.pool.token1.safeTransfer(pos.owner, stack.amount1);
         } else {
-            uint256 tokensReceived = _swapToSide(pool, _ctx.side, _ctx.side > 0 ? amount0 : amount1, 0);
+            uint256 tokensReceived =
+                _swapToSide(stack.pool, _ctx.side, _ctx.side > 0 ? stack.amount0 : stack.amount1, 0);
             _ctx.side > 0
-                ? pool.token1.safeTransfer(pos.owner, tokensReceived)
-                : pool.token0.safeTransfer(pos.owner, tokensReceived);
+                ? stack.pool.token1.safeTransfer(pos.owner, tokensReceived)
+                : stack.pool.token0.safeTransfer(pos.owner, tokensReceived);
         }
 
-        return (amount0, amount1, pos.debtShare0, pos.debtShare1);
+        return (stack.amount0, stack.amount1, pos.debtShare0, pos.debtShare1);
     }
 
-    function repayDebt(uint256 _positionId, uint256 _repayToken0, uint256 _repayToken1) external override onlyDiamond {
+    function repayDebt(uint256 _positionId, uint256 _repayToken0, uint256 _repayToken1)
+        external
+        override
+        onlyDiamond
+        returns (uint112, uint112)
+    {
         MultiModalWorkerStorage.Layout storage $ = MultiModalWorkerStorage.layout();
         MultiModalPosition storage pos = $.positions[_positionId];
         MultiModalWorkerStorage.LiquidityPool memory pool = MultiModalWorkerStorage._readPoolData();
@@ -243,19 +306,20 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
         _compareSpotAndOracle(pool);
 
         // Calculate repayment values and transfer to the lending pool.
+        (uint112 repDebtShare0, uint112 repDebtShare1) = (0, 0);
         if (_repayToken0 > 0) {
             uint112 totalDebt = ILimeDiamond(LIMESTONE_DIAMOND).debtShareToVal(pos.debt0PoolId, pos.debtShare0);
             uint112 repayAmount = FixedPointMathLib.min(_repayToken0.u112(), totalDebt).u112();
-            uint112 repayShares = ILimeDiamond(LIMESTONE_DIAMOND).debtValToShare(pos.debt0PoolId, repayAmount);
-            pos.debtShare0 -= repayShares;
+            repDebtShare0 = ILimeDiamond(LIMESTONE_DIAMOND).debtValToShare(pos.debt0PoolId, repayAmount);
+            pos.debtShare0 -= repDebtShare0;
             pool.token0.safeTransfer(LIMESTONE_DIAMOND, repayAmount);
         }
 
         if (_repayToken1 > 0) {
             uint112 totalDebt = ILimeDiamond(LIMESTONE_DIAMOND).debtShareToVal(pos.debt1PoolId, pos.debtShare1);
             uint112 repayAmount = FixedPointMathLib.min(_repayToken1.u112(), totalDebt).u112();
-            uint112 repayShares = ILimeDiamond(LIMESTONE_DIAMOND).debtValToShare(pos.debt1PoolId, repayAmount);
-            pos.debtShare1 -= repayShares;
+            repDebtShare1 = ILimeDiamond(LIMESTONE_DIAMOND).debtValToShare(pos.debt1PoolId, repayAmount);
+            pos.debtShare1 -= repDebtShare1;
             pool.token1.safeTransfer(LIMESTONE_DIAMOND, repayAmount);
         }
 
@@ -264,6 +328,8 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
             (pool.token0.balanceOf(address(this)), pool.token1.balanceOf(address(this)));
         if (currentToken0 > 0) pool.token0.safeTransfer(pos.owner, currentToken0);
         if (currentToken1 > 0) pool.token1.safeTransfer(pos.owner, currentToken1);
+
+        return (repDebtShare0, repDebtShare1);
     }
 
     /// @notice Partially liquidates a position on the worker.
@@ -276,6 +342,7 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
     {
         MultiModalWorkerStorage.Layout storage $ = MultiModalWorkerStorage.layout();
         MultiModalPosition storage pos = $.positions[_ctx.positionId];
+        LiquidateStack memory stack;
         MultiModalWorkerStorage.LiquidityPool memory pool = MultiModalWorkerStorage._readPoolData();
 
         // Validate current worker stability.
@@ -289,47 +356,46 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
         ILimeDiamond(LIMESTONE_DIAMOND).accessAssets(_liquidator, repayAssets, repayAmounts);
 
         // Calculate total position debt.
-        uint112 debt0 =
+        stack.debt0 =
             pos.debtShare0 > 0 ? ILimeDiamond(LIMESTONE_DIAMOND).debtShareToVal(pos.debt0PoolId, pos.debtShare0) : 0;
-        uint112 debt1 =
+        stack.debt1 =
             pos.debtShare1 > 0 ? ILimeDiamond(LIMESTONE_DIAMOND).debtShareToVal(pos.debt1PoolId, pos.debtShare1) : 0;
 
         // Perform repayment.
-        (uint256 token0Repaid, uint256 token1Repaid) = (0, 0);
-        if (debt0 > 0) {
-            uint112 toRepay = FixedPointMathLib.min(_ctx.token0RepayIn, debt0).u112();
+        if (stack.debt0 > 0) {
+            uint112 toRepay = FixedPointMathLib.min(_ctx.token0RepayIn, stack.debt0).u112();
             uint112 sharesDeducted = ILimeDiamond(LIMESTONE_DIAMOND).debtValToShare(pos.debt0PoolId, toRepay);
             pos.debtShare0 -= sharesDeducted;
             pool.token0.safeTransfer(LIMESTONE_DIAMOND, toRepay);
-            token0Repaid = toRepay;
+            stack.token0Repaid = toRepay;
         } else {
             if (_ctx.token0RepayIn > 0) pool.token0.safeTransfer(_liquidator, _ctx.token0RepayIn);
         }
 
-        if (debt1 > 0) {
-            uint112 toRepay = FixedPointMathLib.min(_ctx.token1RepayIn, debt1).u112();
+        if (stack.debt1 > 0) {
+            uint112 toRepay = FixedPointMathLib.min(_ctx.token1RepayIn, stack.debt1).u112();
             uint112 sharesDeducted = ILimeDiamond(LIMESTONE_DIAMOND).debtValToShare(pos.debt1PoolId, toRepay);
             pos.debtShare1 -= sharesDeducted;
             pool.token1.safeTransfer(LIMESTONE_DIAMOND, toRepay);
-            token1Repaid = toRepay;
+            stack.token1Repaid = toRepay;
         } else {
             if (_ctx.token1RepayIn > 0) pool.token1.safeTransfer(_liquidator, _ctx.token1RepayIn);
         }
 
         // Withdraw assets from position.
-        uint256 totalTokens = _sharesToTokens(pos.positionShares);
-        (uint112 shares, uint256 amount0, uint256 amount1) =
-            _divestAndRemoveLiquidity(pool, (totalTokens * _ctx.positionBps) / 10000);
-        pos.positionShares -= shares;
-        $.totalPositionShares -= shares;
+        stack.totalTokens = _sharesToTokens(pos.positionShares);
+        (stack.shares, stack.amount0, stack.amount1) =
+            _divestAndRemoveLiquidity(pool, (stack.totalTokens * _ctx.positionBps) / 10000);
+        pos.positionShares -= stack.shares;
+        $.totalPositionShares -= stack.shares;
 
         // Calculate liquidator cut and the amount we need to refund.
-        (uint256 fee0, uint256 fee1) = ((amount0 * 800 / 10000), (amount1 * 800 / 10000));
-        amount0 -= fee0;
-        amount1 -= fee1;
-        if (_ctx.token0RepayIn > token0Repaid) {
+        (stack.fee0, stack.fee1) = ((stack.amount0 * 800 / 10000), (stack.amount1 * 800 / 10000));
+        stack.amount0 -= stack.fee0;
+        stack.amount1 -= stack.fee1;
+        if (_ctx.token0RepayIn > stack.token0Repaid) {
             uint256 token0Held = pool.token0.balanceOf(address(this));
-            uint256 refundValue = (_ctx.token0RepayIn - token0Repaid) + fee0;
+            uint256 refundValue = (_ctx.token0RepayIn - stack.token0Repaid) + stack.fee0;
             if (refundValue > token0Held) {
                 // Swap token0 to token1.
                 _swapForExactAmount(pool.token0, pool.token1, refundValue - token0Held);
@@ -338,9 +404,9 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
             }
         }
 
-        if (_ctx.token1RepayIn > token1Repaid) {
+        if (_ctx.token1RepayIn > stack.token1Repaid) {
             uint256 token1Held = pool.token1.balanceOf(address(this));
-            uint256 refundValue = (_ctx.token1RepayIn - token1Repaid) + fee1;
+            uint256 refundValue = (_ctx.token1RepayIn - stack.token1Repaid) + stack.fee1;
             if (refundValue > token1Held) {
                 // Swap token1 to token0.
                 _swapForExactAmount(pool.token1, pool.token0, refundValue - token1Held);

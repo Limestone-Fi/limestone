@@ -26,7 +26,9 @@ interface IMultiModalWorker {
         uint112 _debtShare1
     ) external returns (uint256);
     function divest(V2LikePositionDivestmentContext calldata) external returns (uint256, uint256, uint256, uint256);
-    function repayDebt(uint256 _positionId, uint256 _repayToken0, uint256 _repayToken1) external;
+    function repayDebt(uint256 _positionId, uint256 _repayToken0, uint256 _repayToken1)
+        external
+        returns (uint112, uint112);
     function liquidate(address _liquidator, V2LikePositionLiquidationContext calldata _ctx) external;
     function reinvest() external;
     function getPosition(uint256 _positionId) external view returns (MultiModalPosition memory);

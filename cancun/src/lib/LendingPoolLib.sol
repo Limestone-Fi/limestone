@@ -56,7 +56,7 @@ library LendingPoolLib {
         }
     }
 
-    function _decreaseDelegatedDebt(address _debtHolder, uint256 _poolId, uint256 _assetsRepaid) internal {
+    function _decreaseDelegatedDebtByAmount(address _debtHolder, uint256 _poolId, uint256 _assetsRepaid) internal {
         LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
         Market storage pool = $.pools[_poolId];
         // Update current debt.
@@ -74,6 +74,26 @@ library LendingPoolLib {
             pool.globalDebtValue -= _assetsRepaid.u112();
             pool.globalDebtShare -= debtShares;
             $.delegatedDebt[_debtHolder][_poolId] -= debtShares;
+        }
+    }
+
+    function _decreaseDelegatedDebtByShares(address _debtHolder, uint256 _poolId, uint112 _sharesToRemove) internal {
+        LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
+        Market storage pool = $.pools[_poolId];
+        // Update current debt.
+        uint112 holderShares = $.delegatedDebt[_debtHolder][_poolId];
+        if (_sharesToRemove > holderShares) {
+            // If the debt holder trying to repay more than what's owed, adjust their total amount
+            // so that it instead repays only the debt they owe and not a surplus that alters the entire pool's debt.
+            _sharesToRemove = holderShares;
+        }
+        uint112 debtValue = _debtShareToVal(_poolId, _sharesToRemove);
+        unchecked {
+            // @dev Underflow unlikely. Can test though. We however, safe cast and also validate the holder's shares,
+            // which should mitigate any potential cases that may arise. That said, we are once again fucked if that fails.
+            pool.globalDebtValue -= debtValue;
+            pool.globalDebtShare -= _sharesToRemove;
+            $.delegatedDebt[_debtHolder][_poolId] -= _sharesToRemove;
         }
     }
 
