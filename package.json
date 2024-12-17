@@ -5,6 +5,7 @@
   "scripts": {},
   "private": true,
   "devDependencies": {
+    "@monodon/rust": "^2.1.1",
     "@nx/workspace": "20.1.4",
     "nx": "20.1.4",
     "nx-foundry": "0.1.2"
