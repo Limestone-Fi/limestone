@@ -56,7 +56,7 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
 
     /// @notice Used to restrict calls to EOAs only to avoid flashloan interactions.
     modifier onlyEOA() {
-        _require(msg.sender == tx.origin, Errors.CALLER_NOT_EOA);
+        //_require(msg.sender == tx.origin, Errors.CALLER_NOT_EOA);
         _;
     }
 

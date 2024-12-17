@@ -15,6 +15,13 @@ import {FuzzSetup, MockWarchest, MockGauge, MockToken, DromeMultiModalWorker} fr
 /// @notice Mixin containing fuzz tests for Limestone's position coordinator facet.
 
 contract FuzzPositionCoordinator is FuzzSetup {
+    /// @notice Fuzz test for the PositionCoordinator's `investInV2LikePosition` method. Creates a new position.
+    /// @dev Main invariants:
+    /// 1) New position shouldn't be able to overleverage itself / exceed the set max leverage.
+    /// @param _amount0In Amount of token0 to supply to the position.
+    /// @param _amount1In Amount of token1 to supply to the position.
+    /// @param _amount0Borrow Amount of token0 to borrow for the position.
+    /// @param _amount1Borrow Amount of token1 to borrow for the position.
     function investInNewPosition(uint256 _amount0In, uint256 _amount1In, uint256 _amount0Borrow, uint256 _amount1Borrow)
         public
         setCurrentActor
@@ -52,6 +59,14 @@ contract FuzzPositionCoordinator is FuzzSetup {
         if (_amount1Borrow > 0) totalAeroDebt += _amount1Borrow;
     }
 
+    /// @notice Fuzz test for the PositionCoordinator's `investInV2LikePosition` method. Adds/borrows to an existing position.
+    /// @dev Main invariants:
+    /// 1) New position shouldn't be able to overleverage itself / exceed the set max leverage.
+    /// @param _posIdx Index (related to actors positions list) of the position to access.
+    /// @param _amount0In Amount of token0 to supply to the position.
+    /// @param _amount1In Amount of token1 to supply to the position.
+    /// @param _amount0Borrow Amount of token0 to borrow for the position.
+    /// @param _amount1Borrow Amount of token1 to borrow for the position.
     function addToPosition(
         uint256 _posIdx,
         uint256 _amount0In,
@@ -91,6 +106,16 @@ contract FuzzPositionCoordinator is FuzzSetup {
         if (_amount1Borrow > 0) totalAeroDebt += _amount1Borrow;
     }
 
+    /// @notice Fuzz test for the PositionCoordinator's `investFromV2LikePosition` method. Removes assets from a specific position.
+    /// @dev Main invariants:
+    /// 1) Position shouldn't be overleveraged after withdrawal.
+    /// 2) Repaying USDC or AERO shouldn't remove excessive amounts of debt shares (more debt than the position as this breaks the lending dynamic as a whole by repaying for everyone)
+    /// @param _posIdx Index (related to actors positions list) of the position to access.
+    /// @param _pct Percentage of the position to remove the assets from.
+    /// @param _repay0 Amount of token0 to use for repaying debt.
+    /// @param _repay1 Amount of token1 to use for repaying debt.
+    /// @param _side Side of the LP to receive, either 0 for token0 or 1 for token1.
+    /// @param _minimal Whether the withdrawal should be minimal.
     function removeFromPosition(
         uint256 _posIdx,
         uint16 _pct,
@@ -144,6 +169,13 @@ contract FuzzPositionCoordinator is FuzzSetup {
         if (_repay1 > 0) totalAeroDebt -= _repay1;
     }
 
+    /// @notice Fuzz test for the PositionCoordinator's `repayV2LikeLiquidityPositionDebt` method. Repays position debt.
+    /// @dev Main invariants:
+    /// 1) Repaying USDC or AERO shouldn't remove excessive amounts of debt shares (more debt than the position as this breaks the lending dynamic as a whole by repaying for everyone)
+    /// 2) AERO/USDC totalTokens shouldn't change at all, as debt is already accounted for. This makes a change potentially weird and should be investigated if it occurs.
+    /// @param _posIdx Index (related to actors positions list) of the position to access.
+    /// @param _repay0 Amount of token0 to repay.
+    /// @param _repay1 Amount of token1 to repay.
     function repayForPosition(uint256 _posIdx, uint256 _repay0, uint256 _repay1) public setCurrentActor {
         _posIdx = fl.clamp(_posIdx, 0, actorDromePositions[currentActor].length - 1);
         (uint256 balance0, uint256 balance1) = (usdc.balanceOf(currentActor), aero.balanceOf(currentActor));
@@ -180,6 +212,7 @@ contract FuzzPositionCoordinator is FuzzSetup {
         if (_repay1 > 0) totalAeroDebt -= _repay1;
     }
 
+    /// @notice A method for triggering reinvestment. Doesn't check invariants but is added for its use in call sequences for potential findings.
     function triggerReinvest() public setCurrentActor {
         if (block.timestamp >= lastGaugeInjection + 7 days) {
             aero.mint(address(this), AERO_NOTIFY_AMOUNT);

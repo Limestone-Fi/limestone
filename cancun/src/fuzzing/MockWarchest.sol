@@ -4,6 +4,10 @@ pragma solidity 0.8.28;
 import {ERC20} from "@openzeppelin/token/ERC20/ERC20.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 
+/// @title Mock Warchest.
+/// @author Chainvisions
+/// @notice A mock version of the warchest contract for testing.
+
 contract MockWarchest is ERC20("MockWarchest", "CHEST") {
     using SafeTransferLib for address;
 

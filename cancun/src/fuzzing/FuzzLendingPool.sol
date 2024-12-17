@@ -9,6 +9,11 @@ import {FuzzSetup, MockWarchest, MockToken} from "./FuzzSetup.sol";
 /// @notice Mixin containing fuzz tests for Limestone's lending pool facet.
 
 contract FuzzLendingPool is FuzzSetup {
+    /// @notice Fuzz test for the lending pool facet's `deposit` method.
+    /// @dev Main invariants:
+    /// 1) Shares received from the deposit should be roughly the expected amount based on share price.
+    /// @param _poolId ID of the lending pool to deposit in. Clamps to either pool 1 (USDC) or pool 2 (AERO).
+    /// @param _amount Amount of tokens to deposit into the pool.
     function deposit(uint256 _poolId, uint256 _amount) public setCurrentActor {
         _poolId = fl.clamp(_poolId, 1, 2);
         uint256 balance = _poolId == 1 ? usdc.balanceOf(currentActor) : aero.balanceOf(currentActor);
@@ -42,6 +47,11 @@ contract FuzzLendingPool is FuzzSetup {
         );*/
     }
 
+    /// @notice Fuzz test for the LendingPool facet's `withdraw` method.
+    /// @dev Main invariants:
+    /// 1) Assets received from the deposit should be roughly the expected amount based on share price.
+    /// @param _poolId ID of the lending pool to withdraw from. Clamps to either pool 1 (USDC) or pool 2 (AERO).
+    /// @param _amount Amount of assets to withdraw from the lending pool.
     function withdraw(uint256 _poolId, uint256 _amount) public setCurrentActor {
         _poolId = fl.clamp(_poolId, 1, 2);
         MockWarchest chest = _poolId == 1 ? warchestUsdc : warchestAero;
@@ -76,6 +86,13 @@ contract FuzzLendingPool is FuzzSetup {
         );*/
     }
 
+    /// @notice Fuzz test for the LendingPool facet's `doHardWork` method. Creates a new legacy worker position.
+    /// @dev Main invariants:
+    /// 1) Position owner should be the actor.
+    /// 2) The debt share of the position should be around what we expected it to be based on pending interest.
+    /// @param _poolId ID of the lending pool to borrow from. Clamps to either pool 1 (USDC) or pool 2 (AERO).
+    /// @param _amountIn Amount of tokens to supply as the base collateral for the position.
+    /// @param _amountBorrow Amount of tokens to borrow for the position.
     function createLegacyPosition(uint256 _poolId, uint256 _amountIn, uint256 _amountBorrow) public setCurrentActor {
         _poolId = fl.clamp(_poolId, 1, 2);
 
@@ -87,6 +104,7 @@ contract FuzzLendingPool is FuzzSetup {
         _amountBorrow = fl.clamp(_amountBorrow, _amountBorrow > 0 ? minDebt : 0, maxLiquidity);
 
         // Invest into the new position.
+        lendingPool.deposit(_poolId, 0); // @dev We do this to accrue interest. Allows for precision in our calculations.
         Market memory pool = lendingPool.pools()[_poolId];
         uint256 expectedDebtShare =
             _amountBorrow > 0 ? (_amountBorrow * pool.globalDebtShare) / pool.globalDebtValue : 0;
@@ -119,6 +137,11 @@ contract FuzzLendingPool is FuzzSetup {
         nextPositionID++;
     }
 
+    /// @notice Fuzz test for the LendingPool facet's `increaseCollateral` method. Adds additional collateral to a legacy position.
+    /// @dev Main invariants:
+    /// 1) Position shouldn't somehow become overleveraged (very unlikely though).
+    /// @param _positionIdx Index (related to actors positions list) of the position to access.
+    /// @param _collateralIn Amount of collateral to add the position.
     function increaseLegacyCollateral(uint256 _positionIdx, uint256 _collateralIn) public setCurrentActor {
         _positionIdx = fl.clamp(_positionIdx, 0, actorPositionIds[currentActor].length - 1);
         uint256 posId = actorPositionIds[currentActor][_positionIdx];

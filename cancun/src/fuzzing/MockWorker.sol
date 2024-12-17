@@ -4,6 +4,10 @@ pragma solidity 0.8.28;
 import {ERC20} from "@openzeppelin/token/ERC20/ERC20.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 
+/// @title Mock Worker
+/// @author Chainvisions
+/// @notice Mock version of the legacy worker contract for testing.
+
 contract MockWorker {
     using SafeTransferLib for address;
 
