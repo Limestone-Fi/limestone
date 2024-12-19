@@ -5,7 +5,7 @@ use behaviors::Behaviors;
 
 #[arbiter_macros::main(
   name = "Limestone",
-  about = "Limestone lending and workers."
+  about = "Limestone lending and workers.",
   behaviors = Behaviors
 )]
 pub async fn main() {}
