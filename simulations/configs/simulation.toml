@@ -1,0 +1,5 @@
+[[puppetmaster]]
+Tokens = { token_data.USDC = { name = "USD Coin", symbol = "USDC", decimals = 6 }, token_data.AERO = { name = "Aerodrome Finance", symbol = "AERO", decimals = 18 } }
+
+[[puppetmaster]]
+Deployer = {}

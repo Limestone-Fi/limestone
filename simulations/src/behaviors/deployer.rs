@@ -1,4 +1,5 @@
 use anyhow::Result;
+use arbiter_core::middleware::ArbiterMiddleware;
 use arbiter_engine::{
     machine::{Behavior, EventStream},
     messager::{Messager, To},
@@ -8,7 +9,7 @@ use ethers::{
     utils::parse_units,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::bindings::drome_multi_modal_worker::DromeMultiModalWorker;
 use crate::bindings::lending_pool_wrapper::{LendingPoolConfig, LendingPoolWrapper};
@@ -30,7 +31,10 @@ pub struct Deployments {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Deployer;
+pub struct Deployer {
+    #[serde(skip)]
+    pub client: Option<Arc<ArbiterMiddleware>>,
+}
 
 #[async_trait::async_trait]
 impl Behavior<()> for Deployer {
