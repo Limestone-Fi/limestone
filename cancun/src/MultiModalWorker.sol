@@ -339,6 +339,7 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
         external
         override
         onlyDiamond
+        returns (uint112 newDebtShare0, uint112 newDebtShare1)
     {
         MultiModalWorkerStorage.Layout storage $ = MultiModalWorkerStorage.layout();
         MultiModalPosition storage pos = $.positions[_ctx.positionId];
@@ -382,6 +383,10 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
             if (_ctx.token1RepayIn > 0) pool.token1.safeTransfer(_liquidator, _ctx.token1RepayIn);
         }
 
+        // Reuse `stack.debt0` and `stack.debt1` to store the new total debt share of the position.
+        stack.debt0 = pos.debtShare0;
+        stack.debt1 = pos.debtShare1;
+
         // Withdraw assets from position.
         stack.totalTokens = _sharesToTokens(pos.positionShares);
         (stack.shares, stack.amount0, stack.amount1) =
@@ -419,6 +424,8 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
         // Transfer any remaining assets back to the user.
         pool.token0.safeTransfer(pos.owner, pool.token0.balanceOf(address(this)));
         pool.token1.safeTransfer(pos.owner, pool.token1.balanceOf(address(this)));
+
+        return (stack.debt0, stack.debt1);
     }
 
     function reinvest() external virtual;

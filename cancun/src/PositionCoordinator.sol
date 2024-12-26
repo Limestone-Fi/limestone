@@ -205,7 +205,13 @@ contract PositionCoordinator is IPositionCoordinator {
 
         // Call liquidation method on the worker.
         LendingPoolLib._setExecutionScope(uint32(0), _ctx.worker);
-        IMultiModalWorker(_ctx.worker).liquidate(msg.sender, _ctx);
+        (uint112 newDebt0, uint112 newDebt1) = IMultiModalWorker(_ctx.worker).liquidate(msg.sender, _ctx);
+
+        // Calculate debt share differences and use them to remove any accounted debt shares if needed.
+        uint256 debt0Delta = FixedPointMathLib.dist(pos.debtShare0, newDebt0);
+        uint256 debt1Delta = FixedPointMathLib.dist(pos.debtShare1, newDebt1);
+        if (debt0Delta > 0) _ctx.worker._decreaseDelegatedDebtByShares(pos.debt0PoolId, debt0Delta.u112());
+        if (debt1Delta > 0) _ctx.worker._decreaseDelegatedDebtByShares(pos.debt1PoolId, debt1Delta.u112());
 
         // Check user position health to ensure it's back within our healthy range (at least 10% less than kill factor).
         (positionValue, debtValue) = IMultiModalWorker(_ctx.worker).calculatePositionValue(_ctx.positionId);
