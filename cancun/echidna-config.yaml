@@ -1,6 +1,6 @@
-workers: 13
+workers: 31
 symExec: true
-symExecNSolvers: 3
+symExecNSolvers: 16
 testMode: assertion
 corpusDir: echidna-corpus
 deployer: "0x30000"
