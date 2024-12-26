@@ -19,16 +19,16 @@ library LendingPoolLib {
         if (_poolId == type(uint32).max) return;
         Market storage pool = LendingPoolStorage.layout().pools[_poolId];
         if (block.timestamp > pool.lastAccrueTime) {
-            uint112 interest = _pendingInterest(_poolId);
-            uint112 toReserve = ((interest * pool.reservePoolBps) / uint112(10000));
+            uint256 interest = _pendingInterest(_poolId);
+            uint256 toReserve = ((interest * pool.reservePoolBps) / 10000);
             unchecked {
                 // @dev The fun part about this specifically is that if it does *somehow* overflow,
                 // it won't even affect user funds, it'll just redistribute these reserves to the lenders.
                 // So basically free money for them and a loss of revenue on our end. But also it's very unlikely
                 // that we could accrue so much interest that it'll be worth more than type(uint112).max (and not redeem before that happens).
-                pool.reservePool += toReserve;
+                pool.reservePool += toReserve.u112();
                 // @dev Remember the movie Fight Club? That shouldn't happen here unless `interest` is somehow gigantic.
-                pool.globalDebtValue = (pool.globalDebtValue + interest);
+                pool.globalDebtValue += interest.u112();
             }
             pool.lastAccrueTime = uint32(block.timestamp); // @dev can upgrade before 2102 (If we're still alive by then).
         }
@@ -135,18 +135,18 @@ library LendingPoolLib {
     /// @notice Calculates the pending amount of interest that will be accrued for a specific pool.
     /// @param _poolId Pool ID to calculate the pending interest for.
     /// @return The pending amount of interest that will be accrued by the pool.
-    function _pendingInterest(uint256 _poolId) internal view returns (uint112) {
+    function _pendingInterest(uint256 _poolId) internal view returns (uint256) {
         Market storage lendingPool = LendingPoolStorage.layout().pools[_poolId];
         if (block.timestamp > lendingPool.lastAccrueTime) {
-            uint112 timePassed;
+            uint256 timePassed;
             unchecked {
                 // @dev Unless we somehow traveled back in time, the odds of this underflowing is zero.
-                timePassed = uint112(block.timestamp - lendingPool.lastAccrueTime);
+                timePassed = block.timestamp - lendingPool.lastAccrueTime;
             }
-            uint112 balance = lendingPool.warchest.underlyingBalanceWithInvestment().u112();
-            uint112 ratePerSec =
-                _calculateInterestRate(lendingPool.interestRateModel, lendingPool.globalDebtValue, balance).u112();
-            return (((ratePerSec * lendingPool.globalDebtValue) * timePassed) / uint112(1e18));
+            uint256 balance = lendingPool.warchest.underlyingBalanceWithInvestment();
+            uint256 ratePerSec =
+                _calculateInterestRate(lendingPool.interestRateModel, lendingPool.globalDebtValue, balance);
+            return (((ratePerSec * lendingPool.globalDebtValue) * timePassed) / 1e18);
         } else {
             return 0;
         }
