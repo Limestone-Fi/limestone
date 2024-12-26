@@ -51,6 +51,16 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         bytes data;
     }
 
+    /// @notice Context for `manageAuthList` calls.
+    struct AuthUpdate {
+        /// @notice Address who's authorization is being update for.
+        address authority;
+        /// @notice Type of authorization to give to the authority.
+        AuthType authType;
+        /// @notice Whether or not the authority is authorized to hold the auth role.
+        bool authorized;
+    }
+
     /// @dev Min amount of shares that must be minted. Prevents potential share inflation exploits.
     uint112 internal constant MIN_SHARES = 10 ** 3;
 
@@ -290,29 +300,22 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         }
     }
 
-    /// @notice Manages the status of a list of authorized keepers.
-    /// @param _action Action to take related to the keepers. `0` to add and `1` to remove.
-    /// @param _keepers List of keepers to manage the status of.
-    function manageKeepers(uint8 _action, address[] calldata _keepers) external onlyOwner {
+    /// @notice Manages the status of a list of addresses holding specific authorization related roles.
+    /// @param _ctx Context containing each update to be made to a list of authorized addresses.
+    function manageAuthList(AuthUpdate[] calldata _ctx) external onlyOwner {
         LendingPoolStorage.Layout storage l = LendingPoolStorage.layout();
-        bool authorized = _action == 0 ? true : false;
-        for (uint256 i; i < _keepers.length;) {
-            l.authorizedKeepers[_keepers[i]] = authorized;
-            // forgefmt: disable-next-line
-            unchecked { ++i; }
-        }
-    }
+        for (uint256 i; i < _ctx.length;) {
+            AuthUpdate memory ctx = _ctx[i];
+            if (ctx.authType == AuthType.Keeper) {
+                l.authorizedKeepers[ctx.authority] = ctx.authorized;
+            } else if (ctx.authType == AuthType.Liquidator) {
+                l.authorizedLiquidators[ctx.authority] = ctx.authorized;
+            } else {
+                l.authorizedContractBorrowers[ctx.authority] = ctx.authorized;
+            }
 
-    /// @notice Manages the status of a list of authorized liquidators.
-    /// @param _action Action to take related to the liquidators. `0` to add and `1`. to remove.
-    /// @param _liquidators List of liquidators to manage the status of.
-    function manageLiquidators(uint8 _action, address[] calldata _liquidators) external onlyOwner {
-        LendingPoolStorage.Layout storage l = LendingPoolStorage.layout();
-        bool authorized = _action == 0 ? true : false;
-        for (uint256 i; i < _liquidators.length;) {
-            l.authorizedKeepers[_liquidators[i]] = authorized;
             // forgefmt: disable-next-line
-            unchecked { ++i; }
+            unchecked {++i;}
         }
     }
 
