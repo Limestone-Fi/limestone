@@ -38,6 +38,14 @@ library Cast {
         return uint64(_from);
     }
 
+    /// @notice Casts a `uint256` into a `uint88`.
+    /// @param _from `Uint256` value to cast from.
+    /// @return End `uint64` value from casting.
+    function u88(uint256 _from) internal pure returns (uint88) {
+        require(_from < 1 << 88);
+        return uint88(_from);
+    }
+
     /// @notice Casts a `uint256` into a `uint112`.
     /// @param _from `uint256` value to cast from.
     /// @return End `uint112` value from casting.

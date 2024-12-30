@@ -102,9 +102,9 @@ library LendingPoolLib {
         Market storage pool = $.pools[_poolId];
         _require($.authorizedContractBorrowers[_borrower], Errors.NOT_PRIVILEGED_BORROWER);
         if (_repaying) {
-            pool.delegatedDebtAvailable += uint88(_amount);
+            pool.delegatedDebtAvailable += _amount.u88();
         } else {
-            pool.delegatedDebtAvailable -= uint88(_amount);
+            pool.delegatedDebtAvailable -= _amount.u88();
         }
     }
 
