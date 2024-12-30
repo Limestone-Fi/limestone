@@ -64,15 +64,6 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @dev Min amount of shares that must be minted. Prevents potential share inflation exploits.
     uint112 internal constant MIN_SHARES = 10 ** 3;
 
-    /// @notice Used to restrict calls to EOAs only to avoid flashloan interactions.
-    modifier onlyEOA() {
-        _require(
-            msg.sender == tx.origin || LendingPoolStorage.layout().authorizedContractBorrowers[msg.sender],
-            Errors.CALLER_NOT_EOA
-        );
-        _;
-    }
-
     /// @notice Initializes the lending pool facet.
     function initialize() external initializer {
         LendingPoolStorage.layout().nextPositionID = 1;
@@ -123,7 +114,8 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @notice Borrows assets from the lending pool and opens a new leveraged yield farming position.
     /// @param _id ID of the position being managed. `0` can be inputted to create a brand new position.
     /// @param _ctx Context of the position. Used to discern parameters related to the position.
-    function doHardWork(uint256 _id, WorkContext calldata _ctx) external onlyEOA {
+    function doHardWork(uint256 _id, WorkContext calldata _ctx) external {
+        LendingPoolLib._enforceEOA();
         _ctx.poolId._accrue();
         LendingPoolStorage.Layout storage l = LendingPoolStorage.layout();
         Market storage pool = l.pools[_ctx.poolId];
@@ -176,7 +168,8 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     /// @param _posId ID of the position to add collateral to.
     /// @param _amount Amount of tokens to add to the position.
     /// @param _data Operation data used for contextualizing worker execution.
-    function increaseCollateral(uint256 _posId, uint256 _amount, bytes calldata _data) external onlyEOA {
+    function increaseCollateral(uint256 _posId, uint256 _amount, bytes calldata _data) external {
+        LendingPoolLib._enforceEOA();
         LendingPoolStorage.Layout storage l = LendingPoolStorage.layout();
         Position storage pos = l.positions[_posId];
         Market storage pool = l.pools[pos.poolId];
@@ -210,7 +203,8 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
 
     /// @notice Liquidates an underwater position if the debt ratio is at the kill factor.
     /// @param _id ID of the position to liquidate.
-    function kill(uint256 _id) external onlyEOA {
+    function kill(uint256 _id) external {
+        LendingPoolLib._enforceEOA();
         LendingPoolStorage.Layout storage l = LendingPoolStorage.layout();
         Position storage pos = l.positions[_id];
         Market storage pool = l.pools[pos.poolId];

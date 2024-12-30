@@ -70,6 +70,7 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
     /// @notice Invests assets into a leveraged yield farming position for a Uniswap V2 like liquidity pool.
     /// @param _ctx Context for the investment call, used for discerning parameters related to the call.
     function investInV2LikePosition(V2LikePositionInvestmentContext calldata _ctx) external override {
+        LendingPoolLib._enforceEOA();
         // Validate current borrowing parameters, increase worker debt, and transfer assets to the worker.
         LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
         (Market storage pool0, Market storage pool1) = ($.pools[_ctx.token0PoolId], $.pools[_ctx.token1PoolId]);
@@ -114,6 +115,7 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
     /// @notice Divests assets from a position for a Uniswap V2 like liquidity pool.
     /// @param _ctx Context for the divestment call, used for discerning parameters related to the call.
     function divestFromV2LikePosition(V2LikePositionDivestmentContext calldata _ctx) external override nonReentrant {
+        LendingPoolLib._enforceEOA();
         // Accrue any pending interest for debt accounting.
         LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
         MultiModalPosition memory pos = IMultiModalWorker(_ctx.worker).getPosition(_ctx.positionId);
@@ -169,6 +171,7 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
         uint256 _repayToken0,
         uint256 _repayToken1
     ) external override nonReentrant {
+        LendingPoolLib._enforceEOA();
         // Accrue any pending interest for debt accounting.
         MultiModalPosition memory pos = IMultiModalWorker(_worker).getPosition(_positionId);
         pos.debt0PoolId._accrue();

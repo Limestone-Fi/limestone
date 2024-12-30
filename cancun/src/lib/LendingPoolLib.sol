@@ -100,7 +100,7 @@ library LendingPoolLib {
     function _verifyBorrowerPermissions(address _borrower, uint256 _poolId, uint256 _amount, bool _repaying) internal {
         LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
         Market storage pool = $.pools[_poolId];
-        //_require($.authorizedContractBorrowers[_borrower], Errors.NOT_PRIVILEGED_BORROWER); TODO: Reimplement
+        _require($.authorizedContractBorrowers[_borrower], Errors.NOT_PRIVILEGED_BORROWER);
         if (_repaying) {
             pool.delegatedDebtAvailable += uint88(_amount);
         } else {
@@ -187,5 +187,12 @@ library LendingPoolLib {
         _user;
         LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
         return $.workerDebtParams[_worker].workFactor;
+    }
+
+    function _enforceEOA() internal view {
+        _require(
+            msg.sender == tx.origin || LendingPoolStorage.layout().authorizedContractBorrowers[msg.sender],
+            Errors.CALLER_NOT_EOA
+        );
     }
 }
