@@ -149,6 +149,11 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
         pool0.underlying.safeTransfer(address(pool0.warchest), pool0.underlying.balanceOf(address(this)));
         pool1.underlying.safeTransfer(address(pool1.warchest), pool1.underlying.balanceOf(address(this)));
 
+        // Validate state transitions to ensure that invariants weren't violated.
+        _verifyPositionDebtStateTransition(
+            pos, IMultiModalWorker(_ctx.worker).getPosition(_ctx.positionId), stack.debt0Delta, stack.debt1Delta
+        );
+
         emit PositionDivested(
             _ctx.positionId,
             _ctx.worker,
@@ -224,6 +229,11 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
             Errors.POSITION_NEAR_LIQ_THRESHOLD
         );
 
+        // Validate state transitions to ensure that invariants weren't violated.
+        _verifyPositionDebtStateTransition(
+            pos, IMultiModalWorker(_ctx.worker).getPosition(_ctx.positionId), debt0Delta, debt1Delta
+        );
+
         // TODO: Emit event.
     }
 
@@ -245,5 +255,22 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
 
     function reinvestmentFeeNumerator() external pure override returns (uint256) {
         return 800;
+    }
+
+    /// @dev An internal sanity check used to enforce an invariant that ensures that transitions in the position debt state are as expected. This is designed as an assertion that should never fail.
+    /// @param _oldSnapshot The old snapshot of the position that was originally fetched at the beginning of the function execution.
+    /// @param _latestSnapshot The latest snapshot of the position freshly fetched from the worker's state used for comparing against.
+    /// @param _expectedDelta0 The expected delta in debtShare0 that was calculated during the debt removal process.
+    /// @param _expectedDelta1 The expected delta in debtShare1 that was calculated during the debt removal process.
+    function _verifyPositionDebtStateTransition(
+        MultiModalPosition memory _oldSnapshot,
+        MultiModalPosition memory _latestSnapshot,
+        uint256 _expectedDelta0,
+        uint256 _expectedDelta1
+    ) internal pure {
+        uint256 trueDelta0 = FixedPointMathLib.dist(_oldSnapshot.debtShare0, _latestSnapshot.debtShare0);
+        uint256 trueDelta1 = FixedPointMathLib.dist(_oldSnapshot.debtShare1, _latestSnapshot.debtShare1);
+        assert(trueDelta0 == _expectedDelta0);
+        assert(trueDelta1 == _expectedDelta1);
     }
 }
