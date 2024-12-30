@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
+import {ReentrancyGuardTransient} from "solady/src/utils/ReentrancyGuardTransient.sol";
 import {
     IPositionCoordinator,
     V2LikePositionInvestmentContext,
@@ -21,7 +22,7 @@ import {LendingPoolStorage, Market} from "./LendingPoolStorage.sol";
 /// @author Chainvisions
 /// @notice A periphery facet used for managing multimodal LYF positions.
 
-contract PositionCoordinator is IPositionCoordinator {
+contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
     using SafeTransferLib for address;
     using LendingPoolLib for *;
     using Cast for uint256;
@@ -112,7 +113,7 @@ contract PositionCoordinator is IPositionCoordinator {
 
     /// @notice Divests assets from a position for a Uniswap V2 like liquidity pool.
     /// @param _ctx Context for the divestment call, used for discerning parameters related to the call.
-    function divestFromV2LikePosition(V2LikePositionDivestmentContext calldata _ctx) external override {
+    function divestFromV2LikePosition(V2LikePositionDivestmentContext calldata _ctx) external override nonReentrant {
         // Accrue any pending interest for debt accounting.
         LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
         MultiModalPosition memory pos = IMultiModalWorker(_ctx.worker).getPosition(_ctx.positionId);
@@ -167,7 +168,7 @@ contract PositionCoordinator is IPositionCoordinator {
         address _worker,
         uint256 _repayToken0,
         uint256 _repayToken1
-    ) external override {
+    ) external override nonReentrant {
         // Accrue any pending interest for debt accounting.
         MultiModalPosition memory pos = IMultiModalWorker(_worker).getPosition(_positionId);
         pos.debt0PoolId._accrue();
@@ -189,7 +190,7 @@ contract PositionCoordinator is IPositionCoordinator {
 
     /// @notice Liquidates a position for a Uniswap V2 like liquidity pool.
     /// @param _ctx Context of the liquidation call, used to discern parameters related to the liquidation.
-    function liquidateV2LikePosition(V2LikePositionLiquidationContext calldata _ctx) external override {
+    function liquidateV2LikePosition(V2LikePositionLiquidationContext calldata _ctx) external override nonReentrant {
         // Accrue any pending interest related to the debt.
         LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
         MultiModalPosition memory pos = IMultiModalWorker(_ctx.worker).getPosition(_ctx.positionId);
@@ -223,6 +224,10 @@ contract PositionCoordinator is IPositionCoordinator {
         // TODO: Emit event.
     }
 
+    /// @notice Used to access approved assets from a user. Called by workers for handling multi-token `transferFrom()`.
+    /// @param _user User to transfer assets from.
+    /// @param _tokens Assets to transfer from the user.
+    /// @param _amounts Amounts of each asset to transfer from the user.
     function accessAssets(address _user, address[] calldata _tokens, uint256[] calldata _amounts) external override {
         LendingPoolStorage.ExecScope memory scope = LendingPoolLib._readExecutionScope();
         _require(msg.sender == scope.worker, Errors.NOT_WORKER_IN_EXEC);
@@ -235,7 +240,7 @@ contract PositionCoordinator is IPositionCoordinator {
         }
     }
 
-    function reinvestmentFeeNumerator() external view override returns (uint256) {
+    function reinvestmentFeeNumerator() external pure override returns (uint256) {
         return 800;
     }
 }
