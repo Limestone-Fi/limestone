@@ -40,7 +40,7 @@ interface IShadowRouter {
     /// @param amountIn the amount of tokens of routes[0] to swap
     /// @param routes the struct of the hops the swap should take
     /// @return amounts uint array of the amounts out
-    function getAmountsOut(uint256 amountIn, route[] memory routes) external view returns (uint256[] memory amounts);
+    function getAmountsOut(uint256 amountIn, Route[] memory routes) external view returns (uint256[] memory amounts);
 
     /// @notice performs chained getAmountOut calculations on any number of pairs
     /// @param amountIn amount of tokenIn
@@ -215,7 +215,7 @@ interface IShadowRouter {
     function swapExactTokensForTokens(
         uint256 amountIn,
         uint256 amountOutMin,
-        route[] calldata routes,
+        Route[] calldata routes,
         address to,
         uint256 deadline
     ) external returns (uint256[] memory amounts);
@@ -226,7 +226,7 @@ interface IShadowRouter {
     function swapTokensForExactTokens(
         uint256 amountOut,
         uint256 amountInMax,
-        route[] memory routes,
+        Route[] memory routes,
         address to,
         uint256 deadline
     ) external returns (uint256[] memory amounts);
@@ -235,7 +235,7 @@ interface IShadowRouter {
     /// @param to the address the liquidity tokens should be minted to
     /// @param deadline timestamp deadline
     /// @return amounts amounts returned
-    function swapExactETHForTokens(uint256 amountOutMin, route[] calldata routes, address to, uint256 deadline)
+    function swapExactETHForTokens(uint256 amountOutMin, Route[] calldata routes, address to, uint256 deadline)
         external
         payable
         returns (uint256[] memory amounts);
@@ -248,7 +248,7 @@ interface IShadowRouter {
     function swapTokensForExactETH(
         uint256 amountOut,
         uint256 amountInMax,
-        route[] calldata routes,
+        Route[] calldata routes,
         address to,
         uint256 deadline
     ) external returns (uint256[] memory amounts);
@@ -261,7 +261,7 @@ interface IShadowRouter {
     function swapExactTokensForETH(
         uint256 amountIn,
         uint256 amountOutMin,
-        route[] calldata routes,
+        Route[] calldata routes,
         address to,
         uint256 deadline
     ) external returns (uint256[] memory amounts);
@@ -270,7 +270,7 @@ interface IShadowRouter {
     /// @param to the address the liquidity tokens should be minted to
     /// @param deadline timestamp deadline
     /// @return amounts amounts returned
-    function swapETHForExactTokens(uint256 amountOut, route[] calldata routes, address to, uint256 deadline)
+    function swapETHForExactTokens(uint256 amountOut, Route[] calldata routes, address to, uint256 deadline)
         external
         payable
         returns (uint256[] memory amounts);
@@ -283,7 +283,7 @@ interface IShadowRouter {
     function swapExactTokensForTokensSupportingFeeOnTransferTokens(
         uint256 amountIn,
         uint256 amountOutMin,
-        route[] calldata routes,
+        Route[] calldata routes,
         address to,
         uint256 deadline
     ) external;
@@ -294,7 +294,7 @@ interface IShadowRouter {
     /// @param deadline timestamp deadline
     function swapExactETHForTokensSupportingFeeOnTransferTokens(
         uint256 amountOutMin,
-        route[] calldata routes,
+        Route[] calldata routes,
         address to,
         uint256 deadline
     ) external payable;
@@ -307,7 +307,7 @@ interface IShadowRouter {
     function swapExactTokensForETHSupportingFeeOnTransferTokens(
         uint256 amountIn,
         uint256 amountOutMin,
-        route[] calldata routes,
+        Route[] calldata routes,
         address to,
         uint256 deadline
     ) external;

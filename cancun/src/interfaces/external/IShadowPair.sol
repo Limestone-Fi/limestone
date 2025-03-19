@@ -94,4 +94,6 @@ interface IShadowPair {
 
     /// @notice returns if pair is stable
     function stable() external view returns (bool);
+
+    function quote(address, uint256, uint256) external view returns (uint256);
 }

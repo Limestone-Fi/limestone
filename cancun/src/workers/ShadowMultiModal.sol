@@ -81,12 +81,12 @@ contract ShadowMultiModalWorker is MultiModalWorker {
     }
 
     /// @notice Routes for liquidation on Solidly.
-    mapping(address => mapping(address => IDromeRouter.Route[])) public routes;
+    mapping(address => mapping(address => IShadowRouter.Route[])) public routes;
 
     /// @notice Claims pending rewards and reinvests them.
     function reinvest() external override {
         MultiModalWorkerStorage.LiquidityPool memory pool = MultiModalWorkerStorage._readPoolData();
-        IShadowGauge(pool.rewardPool).getReward(address(this));
+        IShadowGauge(pool.rewardPool).getReward(address(this), pool.rewardTokens);
         _liquidateReward();
         _investLiquidity(pool.pair.balanceOf(address(this)));
     }
@@ -95,7 +95,7 @@ contract ShadowMultiModalWorker is MultiModalWorker {
     /// @param _from Token to swap from.
     /// @param _to Token to swap to.
     /// @param _route Route for the swap.
-    function setRoute(address _from, address _to, IDromeRouter.Route[] calldata _route) external onlyOwner {
+    function setRoute(address _from, address _to, IShadowRouter.Route[] calldata _route) external onlyOwner {
         for (uint256 i; i < _route.length;) {
             routes[_from][_to].push(_route[i]);
             // forgefmt: disable-next-line
@@ -114,7 +114,7 @@ contract ShadowMultiModalWorker is MultiModalWorker {
 
         // Fetch TWAP price for the assets.
         stack.price0 = stack.token0Decimals; // @dev Since we are only calculating the fair price in terms of token0, the price of token0 should just be one unit of token0.
-        stack.price1 = IDromePool(pool.pair).quote(pool.token1, stack.token1Decimals, 4);
+        stack.price1 = IShadowPair(pool.pair).quote(pool.token1, stack.token1Decimals, 4);
 
         // Normalize reserves to 1e18.
         stack.reserve0 = (stack.reserve0 * 1e18) / stack.token0Decimals;
@@ -169,25 +169,13 @@ contract ShadowMultiModalWorker is MultiModalWorker {
         (stack.reserve0, stack.reserve1,) = IShadowPair(_pool.pair).getReserves();
         stack.swapFactory = IShadowRouter(_pool.router).factory();
         (stack.optimalAmount, stack.reversed) = SwapUtils._optimalZapAmountIn(
-            _token0In,
-            _token1In,
-            stack.reserve0,
-            stack.reserve1,
-            IShadowFactory(stack.swapFactory).pairFee(_pool.pair)
+            _token0In, _token1In, stack.reserve0, stack.reserve1, IShadowFactory(stack.swapFactory).pairFee(_pool.pair)
         );
         if (stack.optimalAmount > 0) {
             IShadowRouter.Route[] memory route = new IShadowRouter.Route[](1);
             route[0] = stack.reversed
-                ? IShadowRouter.Route({
-                    from: _pool.token1,
-                    to: _pool.token0,
-                    stable: _pool.stableswap
-                })
-                : IShadowRouter.Route({
-                    from: _pool.token0,
-                    to: _pool.token1,
-                    stable: _pool.stableswap
-                });
+                ? IShadowRouter.Route({from: _pool.token1, to: _pool.token0, stable: _pool.stableswap})
+                : IShadowRouter.Route({from: _pool.token0, to: _pool.token1, stable: _pool.stableswap});
             if (stack.reversed) {
                 _pool.token1.safeApprove(_pool.router, 0);
                 _pool.token1.safeApprove(_pool.router, stack.optimalAmount);
@@ -232,7 +220,6 @@ contract ShadowMultiModalWorker is MultiModalWorker {
             _pool.token0, _pool.token1, _pool.stableswap, _liquidity, 0, 0, address(this), block.timestamp
         );
 
-
         return (shareValue, amount0, amount1);
     }
 
@@ -257,16 +244,14 @@ contract ShadowMultiModalWorker is MultiModalWorker {
         uint256 _amount,
         uint256 _desired
     ) internal override returns (uint256) {
-        IDromeRouter.Route[] memory route = new IDromeRouter.Route[](1);
-        address factory = IDromeRouter(_pool.router).defaultFactory();
+        IShadowRouter.Route[] memory route = new IShadowRouter.Route[](1);
+        address factory = IShadowRouter(_pool.router).defaultFactory();
         if (_side == 0) {
-            route[0] =
-                IDromeRouter.Route({from: _pool.token1, to: _pool.token0, stable: _pool.stableswap});
+            route[0] = IShadowRouter.Route({from: _pool.token1, to: _pool.token0, stable: _pool.stableswap});
             _pool.token1.safeApprove(_pool.router, 0);
             _pool.token1.safeApprove(_pool.router, _amount);
         } else {
-            route[0] =
-                IShadowRouter.Route({from: _pool.token0, to: _pool.token1, stable: _pool.stableswap});
+            route[0] = IShadowRouter.Route({from: _pool.token0, to: _pool.token1, stable: _pool.stableswap});
             _pool.token0.safeApprove(_pool.router, 0);
             _pool.token0.safeApprove(_pool.router, _amount);
         }
@@ -295,14 +280,10 @@ contract ShadowMultiModalWorker is MultiModalWorker {
         }
 
         IShadowRouter.Route[] memory route = new IShadowRouter.Route[](1);
-        route[0] = IShadowRouter.Route({
-            from: _tokenIn,
-            to: _tokenOut,
-            stable: pool.stableswap
-        });
+        route[0] = IShadowRouter.Route({from: _tokenIn, to: _tokenOut, stable: pool.stableswap});
         _tokenIn.safeApprove(pool.router, 0);
         _tokenIn.safeApprove(pool.router, optimalAmount);
-        IDromeRouter(pool.router).swapExactTokensForTokens(optimalAmount, 0, route, address(this), block.timestamp);
+        IShadowRouter(pool.router).swapExactTokensForTokens(optimalAmount, 0, route, address(this), block.timestamp);
     }
 
     function _handleLiquidation(uint256[] memory _balances) internal override {
@@ -373,10 +354,10 @@ contract ShadowMultiModalWorker is MultiModalWorker {
         _validateReserves(_pool);
         (uint256 token0Decimals, uint256 token1Decimals,,,,,) = IShadowPair(_pool.pair).metadata();
         (uint256 token0Spot, uint256 token1Spot, uint256 token0Twap, uint256 token1Twap) = (
-            IDromePool(_pool.pair).getAmountOut(token1Decimals, _pool.token1),
-            IDromePool(_pool.pair).getAmountOut(token0Decimals, _pool.token0),
-            IDromePool(_pool.pair).quote(_pool.token1, token1Decimals, 4),
-            IDromePool(_pool.pair).quote(_pool.token0, token0Decimals, 4)
+            IShadowPair(_pool.pair).getAmountOut(token1Decimals, _pool.token1),
+            IShadowPair(_pool.pair).getAmountOut(token0Decimals, _pool.token0),
+            IShadowPair(_pool.pair).quote(_pool.token1, token1Decimals, 4),
+            IShadowPair(_pool.pair).quote(_pool.token0, token0Decimals, 4)
         );
 
         // Compare spot and TWAP prices and see if they are within our threshold.
