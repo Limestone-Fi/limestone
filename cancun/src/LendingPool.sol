@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.28;
 
 import {Ownable} from "@solidstate/access/ownable/Ownable.sol";
@@ -6,7 +6,6 @@ import {SolidStateERC20} from "@solidstate/token/ERC20/SolidStateERC20.sol";
 import {Initializable} from "@solidstate/security/initializable/Initializable.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
-import {LibTransient} from "solady/src/utils/LibTransient.sol";
 import {LendingPoolLib} from "./lib/LendingPoolLib.sol";
 import {Cast} from "./lib/Cast.sol";
 import {Errors, _require} from "./lib/Errors.sol";
@@ -30,26 +29,6 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
     using LendingPoolLib for uint256;
     using SafeTransferLib for address;
     using Cast for uint256;
-    using LibTransient for LibTransient.TBytes;
-
-    /// @notice Context for `doHardWork` calls. Provides necessary parameters.
-    struct WorkContext {
-        /// @notice ID of the lending pool to borrow assets from.
-        /// @dev Invariant: poolId == workerDebtParams[worker].authorizedPoolId
-        uint256 poolId;
-        /// @notice The worker executed for the position.
-        /// @dev Invariant: loan > 0 -> workerDebtParams[worker].borrowable == true
-        address worker;
-        /// @notice The amount of tokens to deposit into the position (or borrow against).
-        uint256 amountIn;
-        /// @notice The amount of tokens to borrow for the position.
-        /// @dev Invariant: (amountIn + loan) * workFactor >= (loan + debt) * 10000
-        uint256 loan;
-        /// @notice The max amount of tokens to return back to the lending pool for paying off debt.
-        uint256 maxReturn;
-        /// @notice Operation data used for contextualizing worker execution.
-        bytes data;
-    }
 
     /// @notice Context for `manageAuthList` calls.
     struct AuthUpdate {
@@ -98,136 +77,6 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         }
         pool.warchest.withdrawReserves(msg.sender, amount);
         emit Withdraw(_poolId, msg.sender, _shares, amount);
-    }
-
-    /// @notice Used by workers to access any additional approved assets from a specific user. Used for two sided liquidity provision.
-    /// @param _token Token to request from user.
-    /// @param _requestedAmount Amount requested to transfer from the user.
-    function accessUserAssets(address _token, uint256 _requestedAmount) external override {
-        LendingPoolStorage.Layout storage l = LendingPoolStorage.layout();
-        LendingPoolStorage.ExecScope memory scope = LendingPoolLib._readExecutionScope();
-        _require(scope.positionId != type(uint32).max, Errors.NOT_POSITION_IN_EXEC);
-        _require(msg.sender == scope.worker, Errors.NOT_WORKER_IN_EXEC);
-        _token.safeTransferFrom(l.positions[scope.positionId].owner, scope.worker, _requestedAmount);
-    }
-
-    /// @notice Borrows assets from the lending pool and opens a new leveraged yield farming position.
-    /// @param _id ID of the position being managed. `0` can be inputted to create a brand new position.
-    /// @param _ctx Context of the position. Used to discern parameters related to the position.
-    function doHardWork(uint256 _id, WorkContext calldata _ctx) external {
-        LendingPoolLib._enforceEOA();
-        _ctx.poolId._accrue();
-        LendingPoolStorage.Layout storage l = LendingPoolStorage.layout();
-        Market storage pool = l.pools[_ctx.poolId];
-        pool.underlying.safeTransferFrom(msg.sender, address(pool.warchest), _ctx.amountIn);
-
-        // Validate the current position being managed.
-        if (_id == 0) {
-            // forgefmt: disable-next-line
-            unchecked {_id = l.nextPositionID++;}// Overflow risk unlikely. Can even intervene before we hit 4.2b positions.
-            l.positions[_id].worker = _ctx.worker;
-            l.positions[_id].owner = msg.sender;
-        } else {
-            _require(_id < l.nextPositionID, Errors.MALFORMED_POS_ID);
-            _require(l.positions[_id].worker == _ctx.worker, Errors.NOT_POS_WORKER);
-            _require(l.positions[_id].owner == msg.sender, Errors.NOT_POS_OWNER);
-        }
-        emit Borrow(_ctx.poolId, _id, _ctx.loan);
-        LendingPoolLib._setExecutionScope(uint32(_id), _ctx.worker);
-
-        // Check worker parameters to ensure that debt can be accepted by the worker and clear all debt for recalculation.
-        LendingPoolStorage.WorkerDebtParams storage workerParams = l.workerDebtParams[_ctx.worker];
-        _require(workerParams.authorizedPoolId == _ctx.poolId, Errors.WORKER_NOT_AUTHORIZED);
-        _require(
-            _ctx.loan == 0 || (workerParams.borrowable && IWorker(_ctx.worker).healthcheck()), Errors.NOT_ACCEPTING_DEBT
-        );
-        uint256 debt = (_removeDebt(_ctx.poolId, _id) + _ctx.loan);
-
-        // Send assets to the worker to execute the leveraged yield farming position and calculate tokens received back.
-        uint256 back;
-        uint256 toInvest = (_ctx.amountIn + _ctx.loan);
-        uint256 tokensBefore = pool.warchest.underlyingBalanceWithInvestment() - toInvest;
-        pool.warchest.withdrawReserves(_ctx.worker, toInvest);
-        IWorker(_ctx.worker).work(_id, msg.sender, debt, _ctx.data);
-        back = (pool.warchest.underlyingBalanceWithInvestment() - tokensBefore);
-
-        // Update the position accordingly by repaying any current debt.
-        uint256 lessDebt = FixedPointMathLib.min(debt, FixedPointMathLib.min(back, _ctx.maxReturn));
-        debt = (debt - lessDebt);
-        if (debt > 0) {
-            _require(debt >= pool.minDebtSize, Errors.DEBT_TOO_SMALL);
-            uint256 health = IWorker(_ctx.worker).health(_id);
-            _require((health * workerParams.workFactor) >= (debt * 10000), Errors.UNHEALTHY_POSITION);
-            _addDebt(_ctx.poolId, _id, debt.u112());
-        }
-        // Send any surplus tokens to the user.
-        if (back > lessDebt) pool.warchest.withdrawReserves(msg.sender, back - lessDebt);
-    }
-
-    /// @notice Increases the supplied collateral for a farming position.
-    /// @param _posId ID of the position to add collateral to.
-    /// @param _amount Amount of tokens to add to the position.
-    /// @param _data Operation data used for contextualizing worker execution.
-    function increaseCollateral(uint256 _posId, uint256 _amount, bytes calldata _data) external {
-        LendingPoolLib._enforceEOA();
-        LendingPoolStorage.Layout storage l = LendingPoolStorage.layout();
-        Position storage pos = l.positions[_posId];
-        Market storage pool = l.pools[pos.poolId];
-        _require(_posId != 0 && _posId < l.nextPositionID, Errors.MALFORMED_POS_ID);
-        _require(msg.sender == pos.owner, Errors.NOT_POS_OWNER);
-        uint256(pos.poolId)._accrue();
-        LendingPoolLib._setExecutionScope(uint32(_posId), pos.worker);
-        uint256 initialHealth = IWorker(pos.worker).health(_posId);
-        _require(initialHealth != 0, Errors.INACTIVE_POSITION);
-
-        // Ensure that there is no manipulation going on and add collateral to the position.
-        _require(IWorker(pos.worker).healthcheck(), Errors.WORKER_HEALTHCHECK_FAILED);
-        uint256 assetsBefore = pool.warchest.underlyingBalanceWithInvestment();
-        pool.underlying.safeTransferFrom(msg.sender, pos.worker, _amount);
-        IWorker(pos.worker).work(_posId, msg.sender, 0, _data);
-        uint256 assetsReceived = pool.warchest.underlyingBalanceWithInvestment() - assetsBefore;
-        _require(assetsReceived == 0, Errors.CANNOT_WITHDRAW_IF_INCREASING);
-        uint256 healthAfter = IWorker(pos.worker).health(_posId);
-        _require(healthAfter > initialHealth, Errors.HEALTH_DID_NOT_INCREASE);
-
-        // Evaluate position health to ensure it's not nearly underwater.
-        uint256 currentDebt = uint256(pos.poolId)._debtShareToVal(pos.debtShare);
-        _require(IWorker(pos.worker).healthcheck(), Errors.WORKER_HEALTHCHECK_FAILED);
-        _require(
-            (currentDebt * 10000) <= healthAfter * (l.workerDebtParams[pos.worker].killFactor - 100),
-            Errors.POSITION_NEAR_LIQ_THRESHOLD
-        );
-
-        emit IncreaseCollateral(pos.poolId, _posId, _amount, initialHealth, healthAfter);
-    }
-
-    /// @notice Liquidates an underwater position if the debt ratio is at the kill factor.
-    /// @param _id ID of the position to liquidate.
-    function kill(uint256 _id) external {
-        LendingPoolLib._enforceEOA();
-        LendingPoolStorage.Layout storage l = LendingPoolStorage.layout();
-        Position storage pos = l.positions[_id];
-        Market storage pool = l.pools[pos.poolId];
-        uint256(pos.poolId)._accrue();
-
-        // Check if whether or not the position is able to be liquidated.
-        _require(pos.debtShare > 0, Errors.NO_DEBT);
-        uint256 debt = _removeDebt(pos.poolId, _id);
-        uint256 health = IWorker(pos.worker).health(_id);
-        _require((health * l.workerDebtParams[pos.worker].killFactor) < (debt * 10000), Errors.CANT_LIQUIDATE);
-
-        // Liquidate the position and calculated the amount liquidated.
-        uint256 tokensBefore = pool.warchest.underlyingBalanceWithInvestment();
-        IWorker(pos.worker).liquidate(_id);
-        uint256 tokensReceived = (pool.warchest.underlyingBalanceWithInvestment() - tokensBefore);
-        uint256 liqFee = ((tokensReceived * pool.liquidateBps) / 10000);
-        uint256 netRecv = (tokensReceived - liqFee);
-
-        // Transfer liquidation reward to the liquidator and refund the original position owner.
-        if (liqFee > 0) pool.warchest.withdrawReserves(msg.sender, liqFee);
-        uint256 left = netRecv > debt ? netRecv - debt : 0;
-        if (left > 0) pool.warchest.withdrawReserves(pos.owner, left);
-        emit Kill(_id, msg.sender, liqFee, left);
     }
 
     /// @notice Adds a new market to the lending pool.
