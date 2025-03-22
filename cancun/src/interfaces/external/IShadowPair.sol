@@ -1,6 +1,8 @@
 pragma solidity ^0.8.0;
 
-interface IShadowPair {
+import {IERC20} from "@solidstate/interfaces/IERC20.sol";
+
+interface IShadowPair is IERC20 {
     event Mint(address indexed sender, uint256 amount0, uint256 amount1);
     event Burn(address indexed sender, uint256 amount0, uint256 amount1, address indexed to);
     event Swap(

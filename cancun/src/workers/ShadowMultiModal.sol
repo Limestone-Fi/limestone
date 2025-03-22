@@ -60,8 +60,6 @@ contract ShadowMultiModalWorker is MultiModalWorker {
         uint256 reserve0;
         /// @dev The total reserves of token1 in the liquidity pool.
         uint256 reserve1;
-        /// @dev The default Drome factory for router calls and fee calculations.
-        address swapFactory;
         /// @dev The optimal amount of tokens to swap when adding liquidity on both sides.
         uint256 optimalAmount;
         /// @dev Whether or not the swap using `optimalAmount` is reserves and requires token1 -> token0.
@@ -167,9 +165,8 @@ contract ShadowMultiModalWorker is MultiModalWorker {
     ) internal override returns (uint256) {
         AddLiquidityStack memory stack;
         (stack.reserve0, stack.reserve1,) = IShadowPair(_pool.pair).getReserves();
-        stack.swapFactory = IShadowRouter(_pool.router).factory();
         (stack.optimalAmount, stack.reversed) = SwapUtils._optimalZapAmountIn(
-            _token0In, _token1In, stack.reserve0, stack.reserve1, IShadowFactory(stack.swapFactory).pairFee(_pool.pair)
+            _token0In, _token1In, stack.reserve0, stack.reserve1, IShadowPair(_pool.pair).fee()
         );
         if (stack.optimalAmount > 0) {
             IShadowRouter.Route[] memory route = new IShadowRouter.Route[](1);
@@ -245,7 +242,6 @@ contract ShadowMultiModalWorker is MultiModalWorker {
         uint256 _desired
     ) internal override returns (uint256) {
         IShadowRouter.Route[] memory route = new IShadowRouter.Route[](1);
-        address factory = IShadowRouter(_pool.router).defaultFactory();
         if (_side == 0) {
             route[0] = IShadowRouter.Route({from: _pool.token1, to: _pool.token0, stable: _pool.stableswap});
             _pool.token1.safeApprove(_pool.router, 0);
