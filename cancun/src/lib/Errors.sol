@@ -71,7 +71,7 @@ function _revert(uint256 errorCode) pure {
 /// @title "Smolmax" Errors Library
 /// @author Chainvisions
 /// @author Forked and modified from Balancer (https://github.com/balancer-labs/balancer-v2-monorepo/blob/master/pkg/solidity-utils/contracts/helpers/BalancerErrors.sol)
-/// @notice Library for efficiently handling errors on Beluga contracts with reduced bytecode size additions.
+/// @notice Library for efficiently handling errors on Limestone contracts with reduced bytecode size additions.
 
 library Errors {
     // Factory
