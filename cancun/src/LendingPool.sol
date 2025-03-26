@@ -301,39 +301,4 @@ contract LendingPool is ILendingPool, Initializable, Ownable {
         // forgefmt: disable-next-line
         unchecked {pool.totalShares += share.u112();}// @dev same as the other unchecked increase.
     }
-
-    function _addDebt(uint256 _poolId, uint256 _posId, uint112 _debtValue) internal {
-        Market storage pool = LendingPoolStorage.layout().pools[_poolId];
-        Position storage pos = LendingPoolStorage.layout().positions[_posId];
-        uint112 debtShare = _poolId._debtValToShare(_debtValue);
-        unchecked {
-            // @dev Unlikely to overflow, esp when type(uint112).max is HUGE.
-            // That said, will do some fuzzing to confirm my findings.
-            pos.debtShare += debtShare;
-            pool.globalDebtShare += debtShare;
-            pool.globalDebtValue += _debtValue;
-        }
-        emit AddDebt(_poolId, _posId, debtShare);
-    }
-
-    function _removeDebt(uint256 _poolId, uint256 _posId) internal returns (uint256) {
-        Market storage pool = LendingPoolStorage.layout().pools[_poolId];
-        Position storage pos = LendingPoolStorage.layout().positions[_posId];
-        uint112 debtShare = pos.debtShare;
-        if (debtShare > 0) {
-            uint112 debtVal = _poolId._debtShareToVal(debtShare);
-            pos.debtShare = 0;
-            unchecked {
-                // @dev Underflow is very unlikely due to the debt share being derived from the position.
-                // This should create the assumption that pool.globalDebtShare >= pos.debtShare.
-                // Fuzzing advised to confirm though.
-                pool.globalDebtShare -= debtShare;
-                pool.globalDebtValue -= debtVal;
-            }
-            emit RemoveDebt(_poolId, _posId, debtShare);
-            return debtVal;
-        } else {
-            return 0;
-        }
-    }
 }
