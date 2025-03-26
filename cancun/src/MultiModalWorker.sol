@@ -214,7 +214,7 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
         return stack.posId;
     }
 
-    function divest(V2LikePositionDivestmentContext calldata _ctx)
+    function divest(V2LikePositionDivestmentContext calldata _ctx, address _executor)
         external
         override
         onlyDiamond
@@ -223,6 +223,10 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
         MultiModalWorkerStorage.Layout storage $ = MultiModalWorkerStorage.layout();
         MultiModalPosition storage pos = $.positions[_ctx.positionId];
         DivestStack memory stack;
+
+        // Validate current position access control.
+        _require(_ctx.positionId < $.nextPositionId, Errors.MALFORMED_POS_ID);
+        _require(_executor == pos.owner, Errors.NOT_POS_OWNER);
 
         // Check current worker stability.
         stack.pool = MultiModalWorkerStorage._readPoolData();
@@ -285,7 +289,7 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
         return (stack.amount0, stack.amount1, pos.debtShare0, pos.debtShare1);
     }
 
-    function repayDebt(uint256 _positionId, uint256 _repayToken0, uint256 _repayToken1)
+    function repayDebt(address _executor, uint256 _positionId, uint256 _repayToken0, uint256 _repayToken1)
         external
         override
         onlyDiamond
@@ -294,6 +298,10 @@ abstract contract MultiModalWorker is IMultiModalWorker, Initializable, Ownable 
         MultiModalWorkerStorage.Layout storage $ = MultiModalWorkerStorage.layout();
         MultiModalPosition storage pos = $.positions[_positionId];
         MultiModalWorkerStorage.LiquidityPool memory pool = MultiModalWorkerStorage._readPoolData();
+
+        // Validate current position access control.
+        _require(_positionId < $.nextPositionId, Errors.MALFORMED_POS_ID);
+        _require(_executor == pos.owner, Errors.NOT_POS_OWNER);
 
         // Access user assets for repayment.
         address[] memory repayAssets = new address[](2);

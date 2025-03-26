@@ -127,11 +127,30 @@ interface IPositionCoordinator {
     event PositionDivested(
         uint256 indexed positionId,
         address indexed worker,
-        uint256 liquidityBurnt,
         uint256 token0Out,
         uint256 token1Out,
         uint256 token0Repaid,
         uint256 token1Repaid
+    );
+    event DebtRepaid(
+        uint256 indexed positionId,
+        address indexed user,
+        address indexed worker,
+        uint256 repayAmount0,
+        uint256 repayAmount1,
+        uint256 debtShare0Removed,
+        uint256 debtShare1Removed,
+        uint256 newDebtValue
+    );
+    event PositionLiquidated(
+        uint256 indexed positionId,
+        address indexed worker,
+        uint256 repayAmount0,
+        uint256 repayAmount1,
+        uint256 debtDelta0,
+        uint256 debtDelta1,
+        uint256 currentPosValue,
+        uint256 currentDebtValue
     );
 
     function investInV2LikePosition(V2LikePositionInvestmentContext calldata _ctx) external;

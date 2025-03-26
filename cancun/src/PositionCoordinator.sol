@@ -126,7 +126,7 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
 
         // Call worker to divest assets from the position and repay debt.
         (stack.amount0Out, stack.amount1Out, stack.newDebt0, stack.newDebt1) =
-            IMultiModalWorker(_ctx.worker).divest(_ctx);
+            IMultiModalWorker(_ctx.worker).divest(_ctx, msg.sender);
 
         // Calculate debt share differences and use them to remove any accounted debt shares if needed.
         stack.debt0Delta = FixedPointMathLib.dist(pos.debtShare0, stack.newDebt0);
@@ -155,13 +155,7 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
         );
 
         emit PositionDivested(
-            _ctx.positionId,
-            _ctx.worker,
-            0, // TODO: Replace
-            stack.amount0Out,
-            stack.amount1Out,
-            _ctx.token0Repay,
-            _ctx.token1Repay
+            _ctx.positionId, _ctx.worker, stack.amount0Out, stack.amount1Out, _ctx.token0Repay, _ctx.token1Repay
         );
     }
 
@@ -185,7 +179,7 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
         // Repay assets to the worker.
         (, uint256 debtValueBefore) = IMultiModalWorker(_worker).calculatePositionValue(_positionId);
         (uint112 shares0Removed, uint112 shares1Removed) =
-            IMultiModalWorker(_worker).repayDebt(_positionId, _repayToken0, _repayToken1);
+            IMultiModalWorker(_worker).repayDebt(msg.sender, _positionId, _repayToken0, _repayToken1);
         if (shares0Removed > 0) _worker._decreaseDelegatedDebtByShares(pos.debt0PoolId, shares0Removed);
         if (shares1Removed > 0) _worker._decreaseDelegatedDebtByShares(pos.debt1PoolId, shares1Removed);
         (, uint256 debtValueAfter) = IMultiModalWorker(_worker).calculatePositionValue(_positionId);
@@ -193,7 +187,9 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
         // Check to ensure that the debt value decreased.
         _require(debtValueAfter < debtValueBefore, Errors.HEALTH_DID_NOT_INCREASE);
 
-        // TODO: Emit event.
+        emit DebtRepaid(
+            _positionId, msg.sender, _worker, _repayToken0, _repayToken1, shares0Removed, shares1Removed, debtValueAfter
+        );
     }
 
     /// @notice Liquidates a position for a Uniswap V2 like liquidity pool.
@@ -234,7 +230,16 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
             pos, IMultiModalWorker(_ctx.worker).getPosition(_ctx.positionId), debt0Delta, debt1Delta
         );
 
-        // TODO: Emit event.
+        emit PositionLiquidated(
+            _ctx.positionId,
+            _ctx.worker,
+            _ctx.token0RepayIn,
+            _ctx.token1RepayIn,
+            debt0Delta,
+            debt1Delta,
+            positionValue,
+            debtValue
+        );
     }
 
     /// @notice Used to access approved assets from a user. Called by workers for handling multi-token `transferFrom()`.
@@ -253,9 +258,13 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
         }
     }
 
+    /// @notice Performance fee for Limestone workers.
     function reinvestmentFeeNumerator() external pure override returns (uint256) {
         return 800;
     }
+
+    /// @dev An internal sanity check used to enforce an invariant that ensures that transitions in the lending pool debt state are as expected. This is designed as an assertion that should never fail.
+    function _verifyMarketDebtStateTransition() internal pure {}
 
     /// @dev An internal sanity check used to enforce an invariant that ensures that transitions in the position debt state are as expected. This is designed as an assertion that should never fail.
     /// @param _oldSnapshot The old snapshot of the position that was originally fetched at the beginning of the function execution.
