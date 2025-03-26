@@ -33,6 +33,8 @@ library LendingPoolStorage {
     }
 
     struct Layout {
+        /// @notice Protocol flags related to protocol integrity.
+        uint256 flags;
         /// @notice Whether or not liquidation is permissioned.
         bool permissionedLiquidation;
         /// @notice ID for the next LYF position.
