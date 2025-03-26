@@ -13,7 +13,6 @@ import {
 } from "./interfaces/IPositionCoordinator.sol";
 import {IMultiModalWorker, MultiModalPosition} from "./interfaces/IMultiModalWorker.sol";
 import {ILendingPool} from "./interfaces/ILendingPool.sol";
-import {_require, Errors} from "./lib/Errors.sol";
 import {LendingPoolLib} from "./lib/LendingPoolLib.sol";
 import {Cast} from "./lib/Cast.sol";
 import {LendingPoolStorage, Market} from "./LendingPoolStorage.sol";
@@ -26,6 +25,24 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
     using SafeTransferLib for address;
     using LendingPoolLib for *;
     using Cast for uint256;
+
+    /// @notice Thrown when a position has not yet met the debt ratio threshold to be liquidated.
+    error CannotLiquidate();
+
+    /// @notice Thrown when a position is unhealthy upon investing or divesting in a position.
+    error UnhealthyPosition();
+
+    /// @notice Thrown when attempting to execute a worker that is not authorized.
+    error UnauthorizedWorker();
+
+    /// @notice Thrown when the position health does not increase when repaying debt on a position.
+    error HealthDidNotIncrease();
+
+    /// @notice Thrown when attempting to access assets from a worker that is not currently in the execution scope.
+    error NotWorkerInExecution();
+
+    /// @notice Thrown when a liquidation doesn't improve a position's health enough.
+    error PositionNearLiquidationThreshold();
 
     /// @notice Structure for investment related vars.
     /// @dev Used to avoid stack-too-deep errors when not using Yul IR (important for fuzzing).
@@ -75,6 +92,7 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
         LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
         (Market storage pool0, Market storage pool1) = ($.pools[_ctx.token0PoolId], $.pools[_ctx.token1PoolId]);
         InvestmentStack memory stack;
+        require($.authorizedContractBorrowers[_ctx.worker], UnauthorizedWorker());
         if (_ctx.token0Borrow > 0) {
             _ctx.token0PoolId._accrue();
             _ctx.worker._verifyBorrowerPermissions(_ctx.token0PoolId, _ctx.token0Borrow, false);
@@ -95,10 +113,10 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
             IMultiModalWorker(_ctx.worker).invest(_ctx, msg.sender, stack.token0Shares, stack.token1Shares);
         (stack.positionEquity, stack.positionDebt) =
             IMultiModalWorker(_ctx.worker).calculatePositionValue(stack.positionId);
-        _require(
+        require(
             stack.positionEquity > stack.positionDebt
                 && (stack.positionEquity - stack.positionDebt) * stack.userMaxLeverage >= stack.positionEquity * 100,
-            Errors.UNHEALTHY_POSITION
+            UnhealthyPosition()
         );
 
         emit PositionInvested(
@@ -120,6 +138,7 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
         LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
         MultiModalPosition memory pos = IMultiModalWorker(_ctx.worker).getPosition(_ctx.positionId);
         DivestmentStack memory stack;
+        require($.authorizedContractBorrowers[_ctx.worker], UnauthorizedWorker());
         pos.debt0PoolId._accrue();
         pos.debt1PoolId._accrue();
         stack.userMaxLeverage = LendingPoolLib._calculateMaxWorkFactorForUser(msg.sender, _ctx.worker);
@@ -138,10 +157,10 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
         if (stack.newDebt0 > 0 || stack.newDebt1 > 0) {
             (stack.positionEquity, stack.positionDebt) =
                 IMultiModalWorker(_ctx.worker).calculatePositionValue(_ctx.positionId);
-            _require(
+            require(
                 stack.positionEquity > stack.positionDebt
                     && (stack.positionEquity - stack.positionDebt) * stack.userMaxLeverage >= stack.positionEquity * 100,
-                Errors.UNHEALTHY_POSITION
+                UnhealthyPosition()
             );
         }
 
@@ -171,6 +190,7 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
         uint256 _repayToken1
     ) external override nonReentrant {
         LendingPoolLib._enforceEOA();
+        require(LendingPoolStorage.layout().authorizedContractBorrowers[_worker], UnauthorizedWorker());
         // Accrue any pending interest for debt accounting.
         MultiModalPosition memory pos = IMultiModalWorker(_worker).getPosition(_positionId);
         pos.debt0PoolId._accrue();
@@ -178,6 +198,7 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
 
         // Repay assets to the worker.
         (, uint256 debtValueBefore) = IMultiModalWorker(_worker).calculatePositionValue(_positionId);
+        LendingPoolLib._setExecutionScope(0, _worker);
         (uint112 shares0Removed, uint112 shares1Removed) =
             IMultiModalWorker(_worker).repayDebt(msg.sender, _positionId, _repayToken0, _repayToken1);
         if (shares0Removed > 0) _worker._decreaseDelegatedDebtByShares(pos.debt0PoolId, shares0Removed);
@@ -185,7 +206,7 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
         (, uint256 debtValueAfter) = IMultiModalWorker(_worker).calculatePositionValue(_positionId);
 
         // Check to ensure that the debt value decreased.
-        _require(debtValueAfter < debtValueBefore, Errors.HEALTH_DID_NOT_INCREASE);
+        require(debtValueAfter < debtValueBefore, HealthDidNotIncrease());
 
         emit DebtRepaid(
             _positionId, msg.sender, _worker, _repayToken0, _repayToken1, shares0Removed, shares1Removed, debtValueAfter
@@ -198,15 +219,14 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
         // Accrue any pending interest related to the debt.
         LendingPoolStorage.Layout storage $ = LendingPoolStorage.layout();
         MultiModalPosition memory pos = IMultiModalWorker(_ctx.worker).getPosition(_ctx.positionId);
+        require($.authorizedContractBorrowers[_ctx.worker], UnauthorizedWorker());
         pos.debt0PoolId._accrue();
         pos.debt1PoolId._accrue();
 
         // Check if position can be liquidated and perform a healthcheck on the worker to ensure there is no manipulation.
         (uint256 positionValue, uint256 debtValue) =
             IMultiModalWorker(_ctx.worker).calculatePositionValue(_ctx.positionId);
-        _require(
-            (positionValue * $.workerDebtParams[_ctx.worker].killFactor) < (debtValue * 10000), Errors.CANT_LIQUIDATE
-        );
+        require((positionValue * $.workerDebtParams[_ctx.worker].killFactor) < (debtValue * 10000), CannotLiquidate());
 
         // Call liquidation method on the worker.
         LendingPoolLib._setExecutionScope(uint32(0), _ctx.worker);
@@ -220,9 +240,9 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
 
         // Check user position health to ensure it's back within our healthy range (at least 10% less than kill factor).
         (positionValue, debtValue) = IMultiModalWorker(_ctx.worker).calculatePositionValue(_ctx.positionId);
-        _require(
+        require(
             positionValue * ($.workerDebtParams[_ctx.worker].killFactor - 1000) >= (debtValue * 10000),
-            Errors.POSITION_NEAR_LIQ_THRESHOLD
+            PositionNearLiquidationThreshold()
         );
 
         // Validate state transitions to ensure that invariants weren't violated.
@@ -248,7 +268,7 @@ contract PositionCoordinator is IPositionCoordinator, ReentrancyGuardTransient {
     /// @param _amounts Amounts of each asset to transfer from the user.
     function accessAssets(address _user, address[] calldata _tokens, uint256[] calldata _amounts) external override {
         LendingPoolStorage.ExecScope memory scope = LendingPoolLib._readExecutionScope();
-        _require(msg.sender == scope.worker, Errors.NOT_WORKER_IN_EXEC);
+        require(msg.sender == scope.worker, NotWorkerInExecution());
         for (uint256 i; i < _tokens.length;) {
             if (_amounts[i] > 0) {
                 _tokens[i].safeTransferFrom(_user, scope.worker, _amounts[i]);
