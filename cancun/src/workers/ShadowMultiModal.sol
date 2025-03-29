@@ -5,6 +5,8 @@ import {IShadowFactory} from "../interfaces/external/IShadowFactory.sol";
 import {IShadowPair} from "../interfaces/external/IShadowPair.sol";
 import {IShadowRouter} from "../interfaces/external/IShadowRouter.sol";
 import {IShadowGauge} from "../interfaces/external/IShadowGauge.sol";
+import {IX33} from "../interfaces/external/IX33.sol";
+import {IX33Adapter} from "../interfaces/external/IX33Adapter.sol";
 import {SwapUtils} from "../lib/SwapUtils.sol";
 import {
     MultiModalWorker,
@@ -25,6 +27,12 @@ import {
 contract ShadowMultiModalWorker is MultiModalWorker {
     using SafeTransferLib for address;
     using Cast for uint256;
+
+    /// @notice Shadow x33 contract.
+    address public constant X33 = 0x3333111A391cC08fa51353E9195526A70b333333;
+
+    /// @notice Shadow x33 adapter contract.
+    address public constant X33_ADAPTER = 0x9710E10A8f6FbA8C391606fee18614885684548d;
 
     /// @notice Structure for position value calculation related vars.
     /// @dev Used to avoid stack-too-deep errors when not using Yul IR (important for fuzzing).
@@ -85,6 +93,17 @@ contract ShadowMultiModalWorker is MultiModalWorker {
     function reinvest() external override {
         MultiModalWorkerStorage.LiquidityPool memory pool = MultiModalWorkerStorage._readPoolData();
         IShadowGauge(pool.rewardPool).getReward(address(this), pool.rewardTokens);
+        if (IX33(X33).isUnlocked()) {
+            // If we are able to mint x33, handle rewards that way.
+            address shadow = pool.rewards[0]; // @dev We will just assume that it is stored at rewards[0]. Keep that in mind.
+            uint256 toDeposit = shadow.balanceOf(address(this));
+            shadow.safeApprove(X33_ADAPTER, 0);
+            shadow.safeApprove(X33_ADAPTER, shadow.balanceOf(address(this)));
+            IX33Adapter(X33_ADAPTER).deposit(toDeposit, address(this));
+        } else {
+            // If not, we will just wait.
+            return;
+        }
         _liquidateReward();
         _investLiquidity(pool.pair.balanceOf(address(this)));
     }
