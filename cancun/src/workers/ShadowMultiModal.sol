@@ -95,7 +95,7 @@ contract ShadowMultiModalWorker is MultiModalWorker {
         IShadowGauge(pool.rewardPool).getReward(address(this), pool.rewardTokens);
         if (IX33(X33).isUnlocked()) {
             // If we are able to mint x33, handle rewards that way.
-            address shadow = pool.rewards[0]; // @dev We will just assume that it is stored at rewards[0]. Keep that in mind.
+            address shadow = pool.rewardTokens[0]; // @dev We will just assume that it is stored at rewards[0]. Keep that in mind.
             uint256 toDeposit = shadow.balanceOf(address(this));
             shadow.safeApprove(X33_ADAPTER, 0);
             shadow.safeApprove(X33_ADAPTER, shadow.balanceOf(address(this)));
